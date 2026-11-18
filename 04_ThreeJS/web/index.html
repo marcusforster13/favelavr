@@ -74,7 +74,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = id => document.getElementById(id);
-const VERSAO = '1118-1526';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+const VERSAO = '1118-1530';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
 window.__versao = VERSAO; window.__arq = {};
 const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
 $('versao').textContent = 'versão ' + VERSAO;
@@ -220,9 +220,10 @@ new THREE.TextureLoader().load(H('mar/normais.png'), t => {      // gerado por f
 /* ---------- setores: carregados do mais perto para o mais longe ---------- */
 const ktx2 = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/').detectSupport(renderer);
 const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-// ponto de partida: terraço do bar, olhando para o balcao. ?p=x,z escolhe outro ponto (teste)
-const INICIO = (PARAM.get('p') || '6,18').split(',').map(Number);
-const OLHAR_INICIO = Math.atan2(-(13 - 6), -(15 - 18));
+// ponto de partida: entrada da comunidade, no caminho inferior junto ao mar, olhando morro acima (escadaria).
+// As missoes ficam la em cima (deposito, residencia) ou no meio (bar). ?p=x,z escolhe outro ponto (teste)
+const INICIO = (PARAM.get('p') || '0,40').split(',').map(Number);
+const OLHAR_INICIO = -Math.PI / 3;      // olhando para o caminho que sobe, com o mar a direita
 const centro = s => [(s.min[0] + s.max[0]) / 2, (s.min[2] + s.max[2]) / 2];
 const dist = s => { const c = centro(s); return Math.hypot(c[0] - INICIO[0], c[1] - INICIO[1]); };
 const fila = SETORES.setores.filter(s => s.id !== SETOR_MAR).sort((a, b) => dist(a) - dist(b));      // o mar assado da lugar a agua animada
