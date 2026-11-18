@@ -74,7 +74,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = id => document.getElementById(id);
-const VERSAO = '1118-1417';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+const VERSAO = '1118-1526';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
 window.__versao = VERSAO; window.__arq = {};
 const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
 $('versao').textContent = 'versão ' + VERSAO;
@@ -134,6 +134,10 @@ const mar = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI 
     uSol: { value: new THREE.Vector3(-0.613, 0.79, -0.007).normalize() },      // sol do bake (Blender), em coordenadas do site
     uFundo: { value: new THREE.Color(0x08304a) }, uRaso: { value: new THREE.Color(0x1d5c72) },
     uHor: { value: new THREE.Color(0.706, 0.753, 0.800) }, uZen: { value: new THREE.Color(0.46, 0.60, 0.78) },
+    uTurquesa: { value: new THREE.Color(0x2c8a86) },
+    // altura do chao embaixo da agua (feita no navegador quando o cenario termina de carregar; ver mapaAltura)
+    uAltura: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1); t.needsUpdate = true; return t; })() },
+    uCaixa: { value: new THREE.Vector4(0, 0, 1, 1) }, uNivel: { value: -4.42 },
   }]),
   vertexShader: `varying vec3 vMundo;
     #include <fog_pars_vertex>
@@ -141,7 +145,8 @@ const mar = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI 
       gl_Position = projectionMatrix * mvPosition;
       #include <fog_vertex>
     }`,
-  fragmentShader: `uniform float uTempo; uniform sampler2D uNormais; uniform vec3 uSol, uFundo, uRaso, uHor, uZen; varying vec3 vMundo;
+  fragmentShader: `uniform float uTempo, uNivel; uniform sampler2D uNormais, uAltura; uniform vec4 uCaixa;
+    uniform vec3 uSol, uFundo, uRaso, uHor, uZen, uTurquesa; varying vec3 vMundo;
     #include <fog_pars_fragment>
     vec3 normalDe(vec2 p){ return texture2D(uNormais, p).rgb * 2.0 - 1.0; }
     void main(){
@@ -158,10 +163,20 @@ const mar = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI 
       vec3 R = reflect(-V, N); R.y = abs(R.y);
       vec3 ceu = mix(uHor * 0.86, uZen * 0.88, smoothstep(0.0, 0.3, R.y));   // reflexo um pouco mais escuro que o ceu (agua absorve)
       vec3 agua = mix(uRaso, uFundo, smoothstep(0.15, 0.9, V.y));          // olhando para baixo: agua funda
-      vec3 cor = mix(agua, ceu, clamp(fres * 0.9, 0.0, 1.0));
+      // profundidade: chao embaixo da agua (fora do mapa = mar fundo)
+      vec2 uvA = vec2((vMundo.x - uCaixa.x) / uCaixa.z, (uCaixa.y - vMundo.z) / uCaixa.w);
+      float dentro = step(0.0, uvA.x) * step(uvA.x, 1.0) * step(0.0, uvA.y) * step(uvA.y, 1.0);
+      // altura media em volta (mipmap: ~3 m) para a passagem do raso ao fundo ser gradual
+      float chao = mix(uNivel - 50.0, texture2D(uAltura, uvA, 4.0).r * 20.0 + uNivel - 15.0, dentro);
+      float prof = uNivel - chao;
+      // so a faixa da costa (onde o chao sobe ate a superficie); o fundo plano em volta da ilha (~2 m) fica azul
+      float borda = smoothstep(0.0, 0.06, min(min(uvA.x, 1.0 - uvA.x), min(uvA.y, 1.0 - uvA.y)));
+      float raso = (1.0 - smoothstep(0.1, 1.5, prof)) * borda;
+      agua = mix(agua, uTurquesa, raso * 0.5);                              // perto da costa: verde-azulado claro
+      vec3 cor = mix(agua, ceu, clamp(fres * 0.9 * (1.0 - raso * 0.35), 0.0, 1.0));
       float sol = pow(max(dot(R, uSol), 0.0), 350.0) * 3.0 + pow(max(dot(R, uSol), 0.0), 40.0) * 0.12;
       cor += vec3(1.0, 0.93, 0.8) * sol;
-      gl_FragColor = vec4(cor, 1.0);
+      gl_FragColor = vec4(cor, 1.0);      // opaca: o terreno submerso saiu escuro no bake (estava embaixo do mar antigo)
       #include <colorspace_fragment>
       #include <fog_fragment>
     }`
@@ -178,7 +193,8 @@ new THREE.TextureLoader().load(H('mar/normais.png'), t => {      // gerado por f
   const N = ARV.modelos;
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: .5, alphaToCoverage: true });
   const porModelo = [...Array(N)].map(() => []);
-  for (const a of ARV.arvores) porModelo[a[6]].push(a);
+  // 171 arvores do arquivo ficavam com a base dentro do mar (no fundo raso em volta da ilha): ficam de fora
+  for (const a of ARV.arvores) if (a[1] > -4.42 - 0.2) porModelo[a[6]].push(a);
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), E = new THREE.Euler();
   porModelo.forEach((lista, k) => {
     // dois planos 1x1 cruzados, base em y=0, com a parte k da imagem
@@ -246,7 +262,34 @@ function mostrar(msg) {
 const filaPerto = fila.filter(s => dist(s) < PERTO), filaLonge = fila.filter(s => dist(s) >= PERTO);
 async function trabalhar(lista) { while (lista.length) await carregar(lista.shift()); }
 await Promise.all([1, 2, 3, 4].map(() => trabalhar(filaPerto)));
-Promise.all([1, 2, 3].map(() => trabalhar(filaLonge))).then(() => console.log('todos os setores', mb(totalTudo), 'MB'));
+Promise.all([1, 2, 3].map(() => trabalhar(filaLonge))).then(() => { console.log('todos os setores', mb(totalTudo), 'MB'); mapaAltura(); });
+
+/* mapa de altura do terreno visto de cima (uma vez): o mar usa para saber onde e raso.
+   Guarda a altura do chao de NIVEL-15 a NIVEL+5 m em 8 bits (8 cm de precisao), 1024 px sobre a ilha (~40 cm/px). */
+function mapaAltura() {
+  const ter = SETORES.setores.filter(s => /Terreno|Pedras/.test(s.id));
+  if (!ter.length) return;
+  const M = 10, x0 = Math.min(...ter.map(s => s.min[0])) - M, x1 = Math.max(...ter.map(s => s.max[0])) + M;
+  const z0 = Math.min(...ter.map(s => s.min[2])) - M, z1 = Math.max(...ter.map(s => s.max[2])) + M;
+  const sx = x1 - x0, sz = z1 - z0;
+  const cam = new THREE.OrthographicCamera(-sx / 2, sx / 2, sz / 2, -sz / 2, 1, 600);
+  cam.position.set((x0 + x1) / 2, 300, (z0 + z1) / 2); cam.up.set(0, 0, -1); cam.lookAt((x0 + x1) / 2, 0, (z0 + z1) / 2);
+  const rt = new THREE.WebGLRenderTarget(1024, 1024, { depthBuffer: true, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide, uniforms: { uNivel: { value: NIVEL_MAR } },
+    vertexShader: `varying float vY; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vY = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float uNivel; varying float vY; void main(){ gl_FragColor = vec4(clamp((vY - uNivel + 15.0) / 20.0, 0.0, 1.0), 0.0, 0.0, 1.0); }` });
+  const escondidos = [];
+  scene.traverse(o => { if (o === mar || o === ceu || o.isInstancedMesh) { if (o.visible) { escondidos.push(o); o.visible = false; } } });
+  const fundo = scene.background, nevoa = scene.fog; scene.background = new THREE.Color(0, 0, 0); scene.fog = null;
+  scene.overrideMaterial = mat;
+  const xr = renderer.xr.enabled; renderer.xr.enabled = false;
+  renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(scene, cam); renderer.setRenderTarget(null);
+  renderer.xr.enabled = xr; scene.overrideMaterial = null; scene.background = fundo; scene.fog = nevoa;
+  escondidos.forEach(o => o.visible = true);
+  const u = mar.material.uniforms;
+  u.uAltura.value = rt.texture; u.uCaixa.value.set(x0, z1, sx, sz);
+  window.__favela.mapaAltura = rt;
+}
 
 /* ---------- colisao: as proprias malhas dos setores, so as que estao perto ---------- */
 let colisaoAtiva = true, voar = false, alvosCol = [];
@@ -306,9 +349,12 @@ window.__favela = { rig, camera, scene, renderer, pousar, ver(x, z, y = yaw, p =
   // diagnostico: foto de qualquer ponto (de, para) gravada pelo servidor de testes em .claude/capturas
   async foto(de, para, nome = 'foto.jpg', w = 1600, h = 900) {
     const c = new THREE.PerspectiveCamera(60, w / h, .05, 2000); c.position.fromArray(de); c.lookAt(...para);
-    const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(w, h, false); r.outputColorSpace = THREE.SRGBColorSpace;
-    ceu.position.copy(c.position); r.render(scene, c);
-    await fetch('/__salvar?nome=' + nome, { method: 'POST', body: r.domElement.toDataURL('image/jpeg', .9) }); r.dispose(); return nome;
+    // usa o renderizador principal (texturas feitas no navegador, como o mapa de altura do mar, so existem nele)
+    const pr = renderer.getPixelRatio(); renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+    ceu.position.copy(c.position); renderer.render(scene, c);
+    const url = renderer.domElement.toDataURL('image/jpeg', .9);
+    renderer.setPixelRatio(pr); renderer.setSize(innerWidth, innerHeight);
+    await fetch('/__salvar?nome=' + nome, { method: 'POST', body: url }); return nome;
   } };
 $('pct').textContent = '100%'; $('ldfill').style.width = '100%'; $('ldmsg').textContent = 'Pronto';
 setTimeout(() => { $('loading').classList.add('fim'); setTimeout(() => $('loading').remove(), 700); }, 250);
