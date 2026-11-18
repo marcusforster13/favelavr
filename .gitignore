@@ -1,0 +1,12 @@
+# arquivos grandes do Blender e exportacoes brutas (ficam so no computador)
+01_Blender/
+02_Setores_Sem_Arvores/
+_teste_*/
+ferramentas/node_modules/
+ferramentas/*_log.txt
+04_ThreeJS/web/arvores/_arvore_*.png
+.claude/
+*.blend
+*.blend1
+Thumbs.db
+desktop.ini

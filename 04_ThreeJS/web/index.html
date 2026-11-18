@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Favela · treinamento VR</title>
+<style>
+  :root{--ink:#efe9df;--mute:#a7a194;--amber:#f0a340;--panel:rgba(12,15,24,.86);--line:rgba(239,233,223,.14);
+        --sans:"Segoe UI",system-ui,sans-serif;--mono:Consolas,"DM Mono",ui-monospace,monospace}
+  html,body{margin:0;height:100%;background:#05070d;color:var(--ink);font-family:var(--sans);overflow:hidden}
+  canvas{display:block;touch-action:none;cursor:grab}
+  /* tela de carregamento com o logo da XPTO (mesma das outras experiencias) e o progresso real do download */
+  #loading{position:fixed;inset:0;display:grid;place-items:center;background:#f5f7fa;z-index:1000;transition:opacity .6s;font-family:var(--sans)}
+  #loading.fim{opacity:0;pointer-events:none}
+  #loading .ld{width:min(440px,calc(100% - 32px));text-align:center}
+  #loading img{width:100%;height:auto;display:block;margin:0 auto 26px}
+  #loading .ldt{color:#0b1453;font:600 15px/1.4 var(--sans);letter-spacing:.02em;margin-bottom:18px}
+  #loading .ldbar{height:8px;border-radius:4px;background:#dde5ec;overflow:hidden}
+  #loading .ldbar i{display:block;height:100%;width:0;background:#00d3e4;border-radius:4px;transition:width .25s}
+  #loading .ldinfo{display:flex;justify-content:space-between;gap:12px;margin-top:10px;color:#4a5568;font:500 13px/1.4 var(--mono)}
+  #loading .ldinfo b{color:#0b1453;font-weight:600}
+  #hud{position:fixed;left:16px;top:16px;width:min(340px,calc(100% - 32px));background:var(--panel);backdrop-filter:blur(8px);
+       border:1px solid var(--line);border-radius:4px;padding:14px 16px;display:grid;gap:10px;font-size:13px;z-index:5}
+  .eyebrow{margin:0;font:500 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+  h1{margin:0;font-size:22px;line-height:1.1}
+  dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px}
+  dt{font:500 12px/1.5 var(--mono)} dd{margin:0;color:var(--mute)}
+  label{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;color:var(--mute)}
+  input[type=range]{width:100%;accent-color:var(--amber)}
+  .row{display:flex;flex-wrap:wrap;gap:6px}
+  button{font:600 12px/1 var(--sans);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:3px;padding:8px 10px;cursor:pointer}
+  button:hover,button.on{border-color:var(--amber)} button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .count{margin:0;font:500 12px/1 var(--mono)} .help{margin:0;padding-top:8px;border-top:1px solid var(--line);color:var(--mute)}
+  #hud.min > :not(.eyebrow):not(#acoes){display:none} #hud.min #acoes button:not(#bMin){display:none}
+</style>
+</head>
+<body>
+<div id="loading"><div class="ld"><img src="img/logo_xpto.png" alt="XPTO inc." width="788" height="208">
+  <div class="ldt">Favela · Treinamento em realidade virtual</div>
+  <div class="ldbar"><i id="ldfill"></i></div>
+  <div class="ldinfo"><span id="ldmsg">Preparando…</span><b id="pct">0%</b></div></div></div>
+
+<aside id="hud">
+  <p class="eyebrow">Treinamento VR · favela · <span id="versao"></span></p>
+  <h1>Favela</h1>
+  <dl>
+    <dt>Arrastar</dt><dd>olhar ao redor</dd>
+    <dt>W A S D</dt><dd>andar · Shift corre · setas giram</dd>
+    <dt>N · V</dt><dd>colisão liga/desliga · voar (sem gravidade)</dd>
+    <dt>VR</dt><dd>analógico esquerdo anda, direito gira · gatilho direito teleporta</dd>
+  </dl>
+  <label>Brilho <input id="exp" type="range" min="0.5" max="1.6" step="0.02" value="1"></label>
+  <div class="row" id="acoes"><button id="bMin" type="button">Recolher</button></div>
+  <p class="count" id="setoresInfo"></p>
+  <p class="help">Cenário modelado e com luz pré-calculada no Blender (Cycles). Árvores como imagem para caber no Quest. Situação fictícia.</p>
+</aside>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "three-mesh-bvh":"https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.3/build/index.module.js"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+const $ = id => document.getElementById(id);
+const VERSAO = '1118-1335';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+window.__versao = VERSAO; window.__arq = {};
+const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
+$('versao').textContent = 'versão ' + VERSAO;
+// confere no servidor (sem copia guardada) se ha versao mais nova; se houver, recarrega com o numero novo no endereco
+try {
+  const info = await fetch('versao.json?t=' + Date.now(), { cache: 'no-store' }).then(r => r.json());
+  window.__arq = info.arquivos || {}; const nova = info.versao;
+  const u = new URL(location.href);
+  if (nova && nova !== VERSAO && u.searchParams.get('_') !== nova) { u.searchParams.set('_', nova); location.replace(u); await new Promise(() => { }); }
+} catch (e) { }
+const PARAM = new URLSearchParams(location.search);
+const [SETORES, ARV, QUADROS] = await Promise.all(['setores/setores.json', 'arvores/arvores.json', 'arvores/_quadros.json']
+  .map(f => fetch(H(f)).then(r => r.json())));
+
+/* ---------- renderer e cena ---------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+// as texturas assadas ja sairam do Blender com a transformacao de cor aplicada: sem tone mapping aqui
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.xr.enabled = true;
+renderer.xr.setFoveation(1);
+document.body.appendChild(renderer.domElement);
+document.body.appendChild(VRButton.createButton(renderer));
+
+const CEU = new THREE.Color(0xb4c0cc);
+const scene = new THREE.Scene();
+scene.background = CEU;
+scene.fog = new THREE.Fog(CEU, 250, 1400);       // so o mar e o morro distante somem na nevoa
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 2000);
+camera.position.set(0, 1.6, 0);
+const rig = new THREE.Group(); rig.add(camera); scene.add(rig);
+
+/* ceu: degradê simples (cinza-azulado no horizonte, azul em cima), como no render do Blender */
+const ceu = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: `varying vec3 vDir;
+    void main(){ vec3 d = normalize(vDir); float h = d.y;
+      vec3 hor = vec3(0.706, 0.753, 0.800), zen = vec3(0.46, 0.60, 0.78);
+      vec3 col = mix(hor, zen, smoothstep(0.02, 0.7, h));
+      gl_FragColor = vec4(col, 1.0);
+      #include <colorspace_fragment>
+    }`
+}));
+ceu.renderOrder = -1; ceu.frustumCulled = false; scene.add(ceu);
+
+/* ---------- arvores: dois planos cruzados com a imagem renderizada no Blender ---------- */
+{
+  const tex = await new THREE.TextureLoader().loadAsync(H('arvores/arvores.png'));
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const N = ARV.modelos;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, alphaTest: .5, alphaToCoverage: true });
+  const porModelo = [...Array(N)].map(() => []);
+  for (const a of ARV.arvores) porModelo[a[6]].push(a);
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3(), E = new THREE.Euler();
+  porModelo.forEach((lista, k) => {
+    // dois planos 1x1 cruzados, base em y=0, com a parte k da imagem
+    const g1 = new THREE.PlaneGeometry(1, 1), g2 = new THREE.PlaneGeometry(1, 1).rotateY(Math.PI / 2);
+    const geo = new THREE.BufferGeometry();
+    const pos = [...g1.attributes.position.array, ...g2.attributes.position.array];
+    const uv = [...g1.attributes.uv.array, ...g2.attributes.uv.array].map((v, i) => i % 2 === 0 ? (k + v) / N : v);
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex([0, 2, 1, 2, 3, 1, 4, 6, 5, 6, 7, 5]);
+    const [lado, alt] = QUADROS.quadros[k];
+    geo.translate(0, .5 - .02, 0);                      // a base da arvore fica 2% acima da borda de baixo do quadro
+    const im = new THREE.InstancedMesh(geo, mat, lista.length);
+    lista.forEach((a, i) => {
+      const s = lado * a[5] / alt;                       // escala pela altura de cada arvore
+      P.set(a[0], a[1], a[2]); Q.setFromEuler(E.set(0, a[3], 0)); S.set(s, s, s);
+      im.setMatrixAt(i, M.compose(P, Q, S));
+    });
+    im.computeBoundingSphere(); scene.add(im);
+  });
+}
+
+/* ---------- setores: carregados do mais perto para o mais longe ---------- */
+const ktx2 = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/').detectSupport(renderer);
+const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
+// ponto de partida: terraço do bar, olhando para o balcao. ?p=x,z escolhe outro ponto (teste)
+const INICIO = (PARAM.get('p') || '6,18').split(',').map(Number);
+const OLHAR_INICIO = Math.atan2(-(13 - 6), -(15 - 18));
+const centro = s => [(s.min[0] + s.max[0]) / 2, (s.min[2] + s.max[2]) / 2];
+const dist = s => { const c = centro(s); return Math.hypot(c[0] - INICIO[0], c[1] - INICIO[1]); };
+const fila = [...SETORES.setores].sort((a, b) => dist(a) - dist(b));
+const PERTO = 70;                                                       // a tela de carregamento espera os setores ate essa distancia
+const totalPerto = fila.filter(s => dist(s) < PERTO).reduce((t, s) => t + s.bytes, 0);
+const totalTudo = fila.reduce((t, s) => t + s.bytes, 0);
+const mb = b => (b / 1048576).toFixed(1).replace('.', ',');
+let baixadoPerto = 0, prontos = 0;
+const malhas = [];                                                       // malhas dos setores (colisao)
+const materiais = [];
+let brilho = 1;
+function carregar(s) {
+  const perto = dist(s) < PERTO; let ult = 0;
+  return loader.loadAsync(H('setores/' + s.id + '.glb'), e => {
+    if (perto) { baixadoPerto += e.loaded - ult; ult = e.loaded; mostrar(); }
+  }).then(g => {
+    if (perto) { baixadoPerto += s.bytes - ult; }
+    g.scene.traverse(o => {
+      if (!o.isMesh) return;
+      const m = o.material; m.side = THREE.DoubleSide; m.fog = true;
+      if (m.map) m.map.anisotropy = 4;
+      m.color.setScalar(brilho); materiais.push(m);
+      o.geometry.computeBoundsTree(); o.updateMatrixWorld(true);
+      o.geometry.computeBoundingBox(); o.userData.caixa = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+      malhas.push(o);
+    });
+    scene.add(g.scene); prontos++;
+    $('setoresInfo').textContent = `${prontos} de ${fila.length} setores carregados`;
+  }).catch(e => console.warn('setor nao carregou', s.id, e));
+}
+function mostrar(msg) {
+  const p = Math.min(99, Math.round(baixadoPerto / Math.max(1, totalPerto) * 100));
+  $('pct').textContent = p + '%'; $('ldfill').style.width = p + '%';
+  $('ldmsg').textContent = msg || `Baixando o cenário · ${mb(Math.min(baixadoPerto, totalPerto))} de ${mb(totalPerto)} MB`;
+}
+// 4 downloads ao mesmo tempo, sempre o proximo mais perto
+const filaPerto = fila.filter(s => dist(s) < PERTO), filaLonge = fila.filter(s => dist(s) >= PERTO);
+async function trabalhar(lista) { while (lista.length) await carregar(lista.shift()); }
+await Promise.all([1, 2, 3, 4].map(() => trabalhar(filaPerto)));
+Promise.all([1, 2, 3].map(() => trabalhar(filaLonge))).then(() => console.log('todos os setores', mb(totalTudo), 'MB'));
+
+/* ---------- colisao: as proprias malhas dos setores, so as que estao perto ---------- */
+let colisaoAtiva = true, voar = false, alvosCol = [];
+const rayC = new THREE.Raycaster(); rayC.firstHitOnly = true;
+const BAIXO = new THREE.Vector3(0, -1, 0), RAIO = 0.3, ALTURAS = [0.6, 1.3];
+const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _n = new THREE.Vector3(), _m = new THREE.Vector3();
+const caixaPerto = new THREE.Box3();
+function atualizarPerto() {
+  camera.getWorldPosition(V1);
+  caixaPerto.setFromCenterAndSize(V1, _o.set(30, 120, 30));
+  alvosCol = malhas.filter(o => o.userData.caixa.intersectsBox(caixaPerto));
+}
+setInterval(atualizarPerto, 400);
+function mover(dx, dz, dy = 0) {
+  if (!colisaoAtiva || voar) { rig.position.x += dx; rig.position.z += dz; rig.position.y += dy; if (!voar) seguirChao(); return; }
+  camera.getWorldPosition(V1);
+  _m.set(dx, 0, dz);
+  for (let it = 0; it < 2 && _m.lengthSq() > 1e-10; it++) {
+    _d.copy(_m).normalize(); let hit = null;
+    for (const h of ALTURAS) {
+      _o.set(V1.x, rig.position.y + h, V1.z); rayC.set(_o, _d); rayC.far = _m.length() + RAIO;
+      const r = rayC.intersectObjects(alvosCol, false)[0];
+      if (r && r.face && (!hit || r.distance < hit.distance)) hit = r;
+    }
+    if (!hit) break;
+    const livre = Math.max(0, hit.distance - RAIO);
+    rig.position.addScaledVector(_d, livre); V1.addScaledVector(_d, livre);
+    _m.addScaledVector(_d, -livre);
+    _n.copy(hit.face.normal).transformDirection(hit.object.matrixWorld); _n.y = 0;
+    if (_n.lengthSq() < 1e-6) { _m.set(0, 0, 0); break; }
+    _n.normalize(); _m.addScaledVector(_n, -_m.dot(_n));          // desliza ao longo da parede
+  }
+  rig.position.x += _m.x; rig.position.z += _m.z;
+  seguirChao();
+}
+let quedaV = 0;
+function chaoEm(x, y, z, acima = 0.5) {
+  _o.set(x, y + acima, z); rayC.set(_o, BAIXO); rayC.far = 200;
+  return rayC.intersectObjects(alvosCol, false)[0];
+}
+function seguirChao(dt = 0) {
+  camera.getWorldPosition(V1);
+  const r = chaoEm(V1.x, rig.position.y, V1.z);
+  if (!r) return;
+  const dif = r.point.y - rig.position.y;
+  if (dif > -0.05) { rig.position.y += dif * 0.35; quedaV = 0; }                 // degraus e rampas (o raio sai 50 cm acima do pe)
+  else if (dt) { quedaV = Math.min(quedaV + 9.8 * dt, 20); rig.position.y = Math.max(r.point.y, rig.position.y - quedaV * dt); }
+}
+function pousar(x, z) {                                                           // coloca o jogador no chao em (x, z)
+  rig.position.set(x, 0, z); atualizarPerto();
+  const r = chaoEm(x, 150, z, 0); rig.position.y = r ? r.point.y : 20; atualizarPerto();
+}
+let yaw = PARAM.get('p') ? 0 : OLHAR_INICIO, pitch = 0;
+pousar(INICIO[0], INICIO[1]);
+window.__favela = { rig, camera, scene, renderer, pousar, ver(x, z, y = yaw, p = 0) { pousar(x, z); yaw = y; pitch = p; }, get malhas() { return malhas.length; }, get alvos() { return alvosCol.length; },
+  // diagnostico: foto de qualquer ponto (de, para) gravada pelo servidor de testes em .claude/capturas
+  async foto(de, para, nome = 'foto.jpg', w = 1600, h = 900) {
+    const c = new THREE.PerspectiveCamera(60, w / h, .05, 2000); c.position.fromArray(de); c.lookAt(...para);
+    const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(w, h, false); r.outputColorSpace = THREE.SRGBColorSpace;
+    ceu.position.copy(c.position); r.render(scene, c);
+    await fetch('/__salvar?nome=' + nome, { method: 'POST', body: r.domElement.toDataURL('image/jpeg', .9) }); r.dispose(); return nome;
+  } };
+$('pct').textContent = '100%'; $('ldfill').style.width = '100%'; $('ldmsg').textContent = 'Pronto';
+setTimeout(() => { $('loading').classList.add('fim'); setTimeout(() => $('loading').remove(), 700); }, 250);
+
+/* ---------- controles desktop ---------- */
+const keys = new Set();
+let drag = null;
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return; keys.add(e.code);
+  if (e.code === 'KeyN') colisaoAtiva = !colisaoAtiva;
+  if (e.code === 'KeyV') voar = !voar;
+});
+addEventListener('keyup', e => keys.delete(e.code));
+const el = renderer.domElement;
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; yaw += dx * .004; pitch = Math.max(-1.4, Math.min(1.4, pitch + dy * .004)); });
+el.addEventListener('pointerup', () => { drag = null; });
+function desktopMove(dt) {
+  let f = 0, s = 0, u = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) f++; if (keys.has('KeyS') || keys.has('ArrowDown')) f--;
+  if (keys.has('KeyD')) s++; if (keys.has('KeyA')) s--;
+  if (keys.has('KeyE') || keys.has('Space')) u++; if (keys.has('KeyQ')) u--;
+  if (keys.has('ArrowLeft')) yaw += 1.6 * dt; if (keys.has('ArrowRight')) yaw -= 1.6 * dt;
+  const v = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? (voar ? 30 : 8) : 4) * dt;
+  if (f || s || (voar && u)) mover((-Math.sin(yaw) * f + Math.cos(yaw) * s) * v, (-Math.cos(yaw) * f - Math.sin(yaw) * s) * v, voar ? u * v : 0);
+  else if (colisaoAtiva && !voar) seguirChao(dt);
+}
+
+/* ---------- controles VR: analogicos e teleporte ---------- */
+const ray = new THREE.Raycaster(); ray.firstHitOnly = true;
+const reticulo = new THREE.Mesh(new THREE.RingGeometry(.18, .24, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xf0a340, transparent: true, opacity: .8, depthWrite: false, fog: false }));
+reticulo.visible = false; scene.add(reticulo);
+const cmf = new XRControllerModelFactory(), tmpM = new THREE.Matrix4(), controles = [];
+for (const i of [0, 1]) {
+  const c = renderer.xr.getController(i);
+  const linha = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0xf0a340 }));
+  linha.scale.z = 6; c.add(linha);
+  c.addEventListener('connected', e => { c.userData.mao = e.data.handedness; });
+  c.addEventListener('selectstart', () => {
+    if (c.userData.mao === 'left') return;
+    const p = alvoTeleporte(c);
+    if (p) { camera.getWorldPosition(V1); rig.position.x += p.x - V1.x; rig.position.z += p.z - V1.z; rig.position.y = p.y; }
+  });
+  rig.add(c); controles.push(c);
+  const grip = renderer.xr.getControllerGrip(i); grip.add(cmf.createControllerModel(grip)); rig.add(grip);
+}
+function alvoTeleporte(c) {
+  tmpM.identity().extractRotation(c.matrixWorld); ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+  const h = ray.intersectObjects(alvosCol, false)[0];
+  if (!h || !h.face) return null;
+  const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+  return n.y > 0.7 && h.distance < 20 ? h.point : null;
+}
+let snapOk = true;
+function vrMove(dt) {
+  const s = renderer.xr.getSession(); if (!s) return;
+  let andou = false;
+  for (const src of s.inputSources) {
+    const gp = src.gamepad; if (!gp) continue;
+    const x = gp.axes[2] ?? gp.axes[0] ?? 0, y = gp.axes[3] ?? gp.axes[1] ?? 0;
+    if (src.handedness === 'left' && Math.hypot(x, y) > .15) {
+      camera.getWorldDirection(V2); V2.y = 0; V2.normalize();
+      mover((V2.x * -y - V2.z * x) * 2.5 * dt, (V2.z * -y + V2.x * x) * 2.5 * dt); andou = true;
+    } else if (src.handedness === 'right') {
+      if (Math.abs(x) > .6 && snapOk) { snapOk = false; const a = x > 0 ? -Math.PI / 6 : Math.PI / 6; camera.getWorldPosition(V1);
+        rig.position.sub(V1).applyAxisAngle(UP, a).add(V1); rig.rotation.y += a; }
+      if (Math.abs(x) < .3) snapOk = true;
+    }
+  }
+  if (!andou && colisaoAtiva) seguirChao(dt);
+  const p = controles[1] && alvoTeleporte(controles[1]);
+  reticulo.visible = !!p; if (p) reticulo.position.copy(p).y += .02;
+}
+renderer.xr.addEventListener('sessionend', () => { camera.position.set(0, 1.6, 0); reticulo.visible = false; });
+
+/* ---------- interface ---------- */
+$('bMin').onclick = () => { const m = $('hud').classList.toggle('min'); $('bMin').textContent = m ? 'Painel' : 'Recolher'; };
+$('exp').oninput = e => { brilho = +e.target.value; materiais.forEach(m => m.color.setScalar(brilho)); };
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+/* ---------- loop ---------- */
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), .05);
+  if (renderer.xr.isPresenting) vrMove(dt);
+  else { desktopMove(dt); rig.rotation.y = yaw; camera.rotation.set(pitch, 0, 0); }
+  camera.getWorldPosition(V1); ceu.position.copy(V1);
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
