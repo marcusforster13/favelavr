@@ -74,7 +74,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = id => document.getElementById(id);
-const VERSAO = '1118-1408';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+const VERSAO = '1118-1417';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
 window.__versao = VERSAO; window.__arq = {};
 const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
 $('versao').textContent = 'versão ' + VERSAO;
@@ -123,6 +123,54 @@ const ceu = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), new THREE.Sha
 }));
 ceu.renderOrder = -1; ceu.frustumCulled = false; scene.add(ceu);
 
+/* ---------- mar: agua animada no lugar do plano assado ("Mar ao fundo") ----------
+   Ondas por dois mapas de normais que se movem, reflexo do ceu (mais forte olhando de longe: Fresnel), cor de agua
+   funda olhando para baixo e brilho do sol na direcao do sol do bake. Sem renderizar a cena duas vezes (leve no Quest). */
+const SETOR_MAR = 'Setor_+000_+009_000', NIVEL_MAR = -4.42;
+const mar = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+  fog: true,
+  uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+    uTempo: { value: 0 }, uNormais: { value: (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1); t.needsUpdate = true; return t; })() },
+    uSol: { value: new THREE.Vector3(-0.613, 0.79, -0.007).normalize() },      // sol do bake (Blender), em coordenadas do site
+    uFundo: { value: new THREE.Color(0x08304a) }, uRaso: { value: new THREE.Color(0x1d5c72) },
+    uHor: { value: new THREE.Color(0.706, 0.753, 0.800) }, uZen: { value: new THREE.Color(0.46, 0.60, 0.78) },
+  }]),
+  vertexShader: `varying vec3 vMundo;
+    #include <fog_pars_vertex>
+    void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vMundo = w.xyz; vec4 mvPosition = viewMatrix * w;
+      gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: `uniform float uTempo; uniform sampler2D uNormais; uniform vec3 uSol, uFundo, uRaso, uHor, uZen; varying vec3 vMundo;
+    #include <fog_pars_fragment>
+    vec3 normalDe(vec2 p){ return texture2D(uNormais, p).rgb * 2.0 - 1.0; }
+    void main(){
+      vec3 V = cameraPosition - vMundo; float dist = length(V); V /= dist;
+      vec2 p = vMundo.xz;
+      // tres camadas em escalas e angulos diferentes (sem repeticao visivel em grade)
+      vec2 p1 = mat2(0.866, 0.5, -0.5, 0.866) * p, p2 = mat2(0.643, -0.766, 0.766, 0.643) * p;
+      vec3 n = normalDe(p1 / 47.0 + vec2(uTempo * 0.006, uTempo * 0.004))
+             + normalDe(p2 / 13.7 + vec2(-uTempo * 0.014, uTempo * 0.011)) * 0.7
+             + normalDe(p / 4.3 + vec2(uTempo * 0.028, -uTempo * 0.019)) * 0.35;
+      float forca = mix(0.6, 0.07, smoothstep(20.0, 380.0, dist));         // longe: ondas somem (sem cintilar)
+      vec3 N = normalize(vec3(n.x * forca, 1.0, n.y * forca));
+      float fres = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      vec3 R = reflect(-V, N); R.y = abs(R.y);
+      vec3 ceu = mix(uHor * 0.86, uZen * 0.88, smoothstep(0.0, 0.3, R.y));   // reflexo um pouco mais escuro que o ceu (agua absorve)
+      vec3 agua = mix(uRaso, uFundo, smoothstep(0.15, 0.9, V.y));          // olhando para baixo: agua funda
+      vec3 cor = mix(agua, ceu, clamp(fres * 0.9, 0.0, 1.0));
+      float sol = pow(max(dot(R, uSol), 0.0), 350.0) * 3.0 + pow(max(dot(R, uSol), 0.0), 40.0) * 0.12;
+      cor += vec3(1.0, 0.93, 0.8) * sol;
+      gl_FragColor = vec4(cor, 1.0);
+      #include <colorspace_fragment>
+      #include <fog_fragment>
+    }`
+}));
+mar.position.y = NIVEL_MAR; mar.frustumCulled = false; scene.add(mar);
+new THREE.TextureLoader().load(H('mar/normais.png'), t => {      // gerado por ferramentas/gerar_normais_mar.mjs
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; mar.material.uniforms.uNormais.value = t;
+});
+
 /* ---------- arvores: dois planos cruzados com a imagem renderizada no Blender ---------- */
 {
   const tex = await new THREE.TextureLoader().loadAsync(H('arvores/arvores.png'));
@@ -161,7 +209,7 @@ const INICIO = (PARAM.get('p') || '6,18').split(',').map(Number);
 const OLHAR_INICIO = Math.atan2(-(13 - 6), -(15 - 18));
 const centro = s => [(s.min[0] + s.max[0]) / 2, (s.min[2] + s.max[2]) / 2];
 const dist = s => { const c = centro(s); return Math.hypot(c[0] - INICIO[0], c[1] - INICIO[1]); };
-const fila = [...SETORES.setores].sort((a, b) => dist(a) - dist(b));
+const fila = SETORES.setores.filter(s => s.id !== SETOR_MAR).sort((a, b) => dist(a) - dist(b));      // o mar assado da lugar a agua animada
 const PERTO = 70;                                                       // a tela de carregamento espera os setores ate essa distancia
 const totalPerto = fila.filter(s => dist(s) < PERTO).reduce((t, s) => t + s.bytes, 0);
 const totalTudo = fila.reduce((t, s) => t + s.bytes, 0);
@@ -349,6 +397,7 @@ renderer.setAnimationLoop(() => {
   if (renderer.xr.isPresenting) vrMove(dt);
   else { desktopMove(dt); rig.rotation.y = yaw; camera.rotation.set(pitch, 0, 0); }
   camera.getWorldPosition(V1); ceu.position.copy(V1);
+  mar.material.uniforms.uTempo.value = clock.elapsedTime;
   renderer.render(scene, camera);
 });
 </script>
