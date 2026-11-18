@@ -43,3 +43,12 @@ saíram pretos: a UV automática do terreno virou ~132 mil pedacinhos do tamanho
 com as faces viradas para dentro. `ferramentas/blender/rebake_terreno.py` refaz só essas peças (terreno em 3 × 2
 partes com UV projetada de cima, pedras com normais corrigidas), com o mesmo bake (Cycles, 128 amostras, cena inteira),
 e grava os setores `Setor_Terreno_*`, `Setor_Pedras` e `Setor_Base_Contencao` no lugar dos antigos.
+
+## Treinamento (missões)
+
+- Roteiro: `05_Treinamento/ROTEIRO_MISSOES.md`; mecânica: `05_Treinamento/cenario_favela_01.json` (copiar para `04_ThreeJS/web/treinamento/`).
+- Motor: `04_ThreeJS/web/treinamento.js` é **gerado** por `ferramentas/motor/montar_motor.js` (partes genéricas do cassino + `ferramentas/motor/missoes.js`). Edite `missoes.js` e rode:
+  `node ferramentas/motor/montar_motor.js <cassino>/04_ThreeJS/web/treinamento.js 04_ThreeJS/web/treinamento.js`
+- Peças pegáveis (pacotes, balança, celulares, maleta, portas): `ferramentas/blender/separar_interativos.py` tira do bake, com a mesma luz, para `web/interativos/`.
+- Personagens: reaproveitados dos projetos anteriores (`web/personagens/manifest.json` diz a origem de cada um); o site baixa só os da missão sorteada.
+- Variações forçadas pela URL: `?v=missao:bar,suspeito:atira,evento:crianca`.

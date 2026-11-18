@@ -1,0 +1,341 @@
+{
+ "dep_pacotes": {
+  "objetos": [
+   "R32 Pacote ficticio 1",
+   "R32 Pacote ficticio 2",
+   "R32 Pacote ficticio 3",
+   "R32 Pacote ficticio 4",
+   "R32 Pacote ficticio 5"
+  ],
+  "min": [
+   50.865,
+   19.034,
+   -7.201
+  ],
+  "max": [
+   51.311,
+   19.137,
+   -6.709
+  ]
+ },
+ "dep_balanca": {
+  "objetos": [
+   "R32 Balanca bancada"
+  ],
+  "min": [
+   50.883,
+   19.033,
+   -7.89
+  ],
+  "max": [
+   51.248,
+   19.141,
+   -7.607
+  ]
+ },
+ "dep_bolsa": {
+  "objetos": [
+   "R33 Bolsa lona aberta com dobras",
+   "R33 Bolsa costuras ziper e alcas",
+   "R33 Tecido no fundo bolsa"
+  ],
+  "min": [
+   50.819,
+   18.488,
+   -7.532
+  ],
+  "max": [
+   51.337,
+   18.875,
+   -6.903
+  ]
+ },
+ "dep_caderno": {
+  "objetos": [
+   "R32 Caderno e caneta",
+   "R33 Anotacoes ficticias caderno"
+  ],
+  "min": [
+   50.963,
+   19.034,
+   -7.39
+  ],
+  "max": [
+   51.261,
+   19.064,
+   -7.168
+  ]
+ },
+ "dep_celular": {
+  "objetos": [
+   "R32 Celular mesa"
+  ],
+  "min": [
+   51.267,
+   19.033,
+   -6.655
+  ],
+  "max": [
+   51.35,
+   19.045,
+   -6.506
+  ]
+ },
+ "dep_radio": {
+  "objetos": [
+   "R32 Radio mesa"
+  ],
+  "min": [
+   50.82,
+   19.034,
+   -7.361
+  ],
+  "max": [
+   50.892,
+   19.404,
+   -7.313
+  ]
+ },
+ "dep_recibos": {
+  "objetos": [
+   "R33 Recibo ficticio 1",
+   "R33 Recibo ficticio 2",
+   "R33 Recibo ficticio 3",
+   "R32 Papel cenografico 0",
+   "R32 Papel cenografico 1"
+  ],
+  "min": [
+   50.842,
+   19.034,
+   -7.737
+  ],
+  "max": [
+   51.33,
+   19.051,
+   -6.498
+  ]
+ },
+ "dep_porta_1": {
+  "objetos": [
+   "R32 Porta aberta folha 1"
+  ],
+  "min": [
+   54.48,
+   18.2,
+   -6.164
+  ],
+  "max": [
+   55.1,
+   20.3,
+   -6.036
+  ]
+ },
+ "dep_porta_2": {
+  "objetos": [
+   "R32 Porta aberta folha 2"
+  ],
+  "min": [
+   54.483,
+   18.2,
+   -7.32
+  ],
+  "max": [
+   55.075,
+   20.3,
+   -7.089
+  ]
+ },
+ "bar_pacotes": {
+  "objetos": [
+   "R31 Fita pacote 1",
+   "R31 Fita pacote 2",
+   "R31 Fita pacote 3",
+   "R31 Fita pacote 4",
+   "R31 Fita pacote 5",
+   "R31 Fita pacote 6",
+   "PARTE bar_pacotes"
+  ],
+  "min": [
+   12.477,
+   10.62,
+   13.736
+  ],
+  "max": [
+   12.962,
+   10.712,
+   13.974
+  ]
+ },
+ "bar_dinheiro": {
+  "objetos": [
+   "R31 Maco papel cenografico 1",
+   "R31 Maco papel cenografico 2",
+   "R31 Maco papel cenografico 3"
+  ],
+  "min": [
+   12.359,
+   10.619,
+   14.27
+  ],
+  "max": [
+   12.743,
+   10.635,
+   14.35
+  ]
+ },
+ "bar_radios": {
+  "objetos": [
+   "R31 Radio portatil 1",
+   "R31 Radio portatil 2"
+  ],
+  "min": [
+   11.814,
+   10.618,
+   13.796
+  ],
+  "max": [
+   12.237,
+   11.009,
+   14.162
+  ]
+ },
+ "bar_celulares": {
+  "objetos": [
+   "R31 Celular 1",
+   "R31 Celular 2"
+  ],
+  "min": [
+   12.966,
+   10.618,
+   14.22
+  ],
+  "max": [
+   13.827,
+   10.631,
+   14.402
+  ]
+ },
+ "ofi_maleta": {
+  "objetos": [
+   "R36 Maleta base",
+   "R36 Celular maleta A",
+   "R36 Celular maleta B"
+  ],
+  "min": [
+   -34.468,
+   0.135,
+   32.011
+  ],
+  "max": [
+   -33.829,
+   0.235,
+   32.436
+  ]
+ },
+ "ofi_tampa": {
+  "objetos": [
+   "R36 Maleta tampa"
+  ],
+  "min": [
+   -34.473,
+   0.18,
+   31.997
+  ],
+  "max": [
+   -33.951,
+   0.52,
+   32.102
+  ]
+ },
+ "ofi_documentos": {
+  "objetos": [
+   "R35 Documentos ficticios oficina"
+  ],
+  "min": [
+   -33.624,
+   0.138,
+   32.011
+  ],
+  "max": [
+   -33.288,
+   0.146,
+   32.346
+  ]
+ },
+ "ofi_portao": {
+  "objetos": [
+   "R36 Folha movel portao"
+  ],
+  "min": [
+   -33.285,
+   1.291,
+   35.472
+  ],
+  "max": [
+   -30.379,
+   1.689,
+   35.886
+  ]
+ },
+ "res_porta_servico": {
+  "objetos": [
+   "R43 Porta servico folha aberta"
+  ],
+  "min": [
+   37.888,
+   19.006,
+   -7.229
+  ],
+  "max": [
+   38.788,
+   21.086,
+   -7.149
+  ]
+ },
+ "res_porta_casal": {
+  "objetos": [
+   "R43 Folha Quarto casal"
+  ],
+  "min": [
+   44.694,
+   19.006,
+   -4.186
+  ],
+  "max": [
+   45.744,
+   21.086,
+   -4.101
+  ]
+ },
+ "res_porta_solteiro": {
+  "objetos": [
+   "R43 Folha Quarto solteiro"
+  ],
+  "min": [
+   44.674,
+   19.006,
+   -6.886
+  ],
+  "max": [
+   45.725,
+   21.086,
+   -6.801
+  ]
+ },
+ "bar_balanca": {
+  "objetos": [
+   "R31 Balan\u00e7a botoes e pes",
+   "PARTE bar_balanca"
+  ],
+  "min": [
+   13.91,
+   10.618,
+   13.98
+  ],
+  "max": [
+   14.33,
+   10.779,
+   14.285
+  ]
+ }
+}

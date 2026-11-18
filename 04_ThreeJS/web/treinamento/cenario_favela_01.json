@@ -1,0 +1,276 @@
+{
+  "id": "favela_01",
+  "titulo": "Favela · denúncias na comunidade",
+  "versao": "rascunho 1 · para validação com instrutores",
+  "aviso": "Situação fictícia. Pessoas, endereços e fatos são inventados. Há cenas de confronto armado com disparos e sangue em adultos; crianças nunca são atingidas.",
+  "aprovacao": { "pontos_minimos": 70, "sem_falha_grave": true },
+
+  "variacoes": {
+    "missao": ["deposito", "residencia", "bar", "oficina"],
+    "evento": ["olheiro", "moradora", "crianca"],
+    "suspeito": ["rende", "foge", "atira"],
+    "deposito_indicios": ["visiveis", "escondidos"],
+    "morador": ["autoriza", "recusa", "tranca"],
+    "familia": ["mulher_crianca", "sozinho"],
+    "arma_casa": ["revolver", "pistola", "fuzil"],
+    "frequentador": ["cidadao", "usuario"],
+    "moto": ["regular", "adulterada"],
+    "dono_oficina": ["apresenta", "cliente", "foge"]
+  },
+  "nomes_variacao": {
+    "missao": { "deposito": "depósito de drogas (Casa 67)", "residencia": "arma em residência", "bar": "ponto de venda no bar da praça", "oficina": "moto roubada na oficina" },
+    "evento": { "olheiro": "olheiro com rádio na laje", "moradora": "moradora na escadaria", "crianca": "criança jogando bola no caminho" },
+    "suspeito": { "rende": "o suspeito se rende", "foge": "o suspeito foge", "atira": "o suspeito atira" },
+    "deposito_indicios": { "visiveis": "material à vista da porta", "escondidos": "nada à vista" },
+    "morador": { "autoriza": "morador autoriza a entrada", "recusa": "morador recusa com calma", "tranca": "morador se tranca armado" },
+    "familia": { "mulher_crianca": "mulher e criança em casa", "sozinho": "morador sozinho" },
+    "arma_casa": { "revolver": "revólver com registro vencido", "pistola": "pistola sem registro", "fuzil": "fuzil" },
+    "frequentador": { "cidadao": "frequentador é cidadão comum", "usuario": "frequentador com porção pequena" },
+    "moto": { "regular": "documentação em dia (denúncia falsa)", "adulterada": "chassi raspado" },
+    "dono_oficina": { "apresenta": "dono apresenta documento", "cliente": "diz que é de um cliente", "foge": "tenta fugir com a maleta" }
+  },
+
+  "fases": [
+    { "id": "f1_chegada", "nome": "Fase 1 · Chegada e deslocamento",
+      "acoes": [
+        { "id": "comunicar_chegada", "texto": "Informou a chegada à central pelo rádio", "pontos": 4, "base": "Procedimento operacional" },
+        { "id": "combinar_parceiro", "texto": "Combinou com o parceiro um deslocamento com cobertura", "pontos": 4, "base": "Técnica de patrulha" },
+        { "id": "evento_ok", "texto": "Agiu certo no evento do caminho (sem abordar quem não ameaça; protegeu a criança)", "pontos": 6, "base": "CPP art. 244 · ECA art. 18 · ADPF 635" }
+      ],
+      "erros": [
+        { "id": "subir_correndo", "texto": "Subiu direto, sem cobertura", "pontos": -3 },
+        { "id": "abordagem_sem_suspeita", "texto": "Revistou ou intimidou morador sem fundada suspeita", "pontos": -5, "feedback": "Busca pessoal exige fundada suspeita (CPP art. 244)." },
+        { "id": "arma_sem_ameaca", "texto": "Apontou a arma para quem não ameaçava", "pontos": -4 }
+      ],
+      "falhas_graves": [
+        { "id": "crianca_na_linha", "texto": "Seguiu em postura de confronto com criança na linha de tiro", "pontos": -15, "base": "ECA art. 18 · ADPF 635" }
+      ]
+    },
+    { "id": "f2_abordagem", "nome": "Fase 2 · Abordagem e entrada",
+      "acoes": [
+        { "id": "identificar_se", "texto": "Identificou-se e explicou o motivo", "pontos": 5, "base": "Lei 13.869/2019 · procedimento" },
+        { "id": "entrada_flagrante", "texto": "Entrou no depósito com o material à vista (flagrante)", "pontos": 10, "base": "CF art. 5º, XI · STF RE 603.616 (Tema 280)", "condicao": "variacao.missao == 'deposito' && variacao.deposito_indicios == 'visiveis'", "validar": true },
+        { "id": "nao_entrar_sem_razao", "texto": "Não entrou só com a denúncia anônima: cercou e pediu mandado", "pontos": 10, "base": "CF art. 5º, XI · STF RE 603.616 (Tema 280)", "condicao": "variacao.missao == 'deposito' && variacao.deposito_indicios == 'escondidos' || variacao.missao == 'residencia' && variacao.morador == 'recusa'", "validar": true },
+        { "id": "consentimento_registrado", "texto": "Registrou a autorização do morador (câmera corporal e testemunha)", "pontos": 10, "base": "CF art. 5º, XI · STJ HC 598.051", "condicao": "variacao.missao == 'residencia' && variacao.morador == 'autoriza'", "validar": true },
+        { "id": "isolar_conter", "texto": "Isolou, conteve e pediu apoio especializado, sem invadir", "pontos": 10, "base": "Gerenciamento de crise", "condicao": "variacao.missao == 'residencia' && variacao.morador == 'tranca'" },
+        { "id": "proteger_familia", "texto": "Tirou a mulher e a criança da área de risco", "pontos": 6, "base": "ECA arts. 18 e 232", "condicao": "variacao.missao == 'residencia' && variacao.familia == 'mulher_crianca'" },
+        { "id": "proteger_terceiros", "texto": "Afastou os frequentadores antes de agir", "pontos": 8, "base": "Uso da força · proteção de terceiros", "condicao": "variacao.missao == 'bar'" },
+        { "id": "busca_com_suspeita", "texto": "Revistou só quem tinha fundada suspeita", "pontos": 6, "base": "CPP art. 244 · STJ RHC 158.580", "condicao": "variacao.missao == 'bar'", "validar": true },
+        { "id": "conferir_documento", "texto": "Conferiu documento e chassi antes de concluir", "pontos": 10, "base": "CTB · CP arts. 180 e 311", "condicao": "variacao.missao == 'oficina'" }
+      ],
+      "erros": [
+        { "id": "ameacar_morador", "texto": "Ameaçou ou constrangeu quem não era suspeito", "pontos": -5 }
+      ],
+      "falhas_graves": [
+        { "id": "invasao_sem_razao", "texto": "Entrou à força na casa só com a denúncia anônima", "pontos": -20, "base": "CF art. 5º, XI · Lei 13.869/2019, art. 22", "validar": true },
+        { "id": "invadir_crise", "texto": "Invadiu a casa com o morador armado e a família dentro", "pontos": -20, "base": "Gerenciamento de crise · ECA" }
+      ]
+    },
+    { "id": "f3_forca", "nome": "Fase 3 · Uso da força",
+      "acoes": [
+        { "id": "ordem_verbal", "texto": "Deu ordem verbal clara antes de qualquer outra reação", "pontos": 8, "base": "Lei 13.060/2014 · Portaria Interministerial 4.226/2010", "validar": true },
+        { "id": "resposta_proporcional", "texto": "Respondeu à agressão armada de forma proporcional", "pontos": 10, "base": "CP arts. 23 e 25", "condicao": "variacao.suspeito == 'atira'" },
+        { "id": "algemas_justificadas", "texto": "Usou algemas só por resistência, fuga ou perigo, e justificou", "pontos": 5, "base": "Súmula Vinculante 11" },
+        { "id": "socorro", "texto": "Pediu socorro ao ferido e comunicou o disparo", "pontos": 6, "base": "ADPF 635 · CP art. 135", "condicao": "variacao.ferido == 'sim'" }
+      ],
+      "erros": [
+        { "id": "disparo_sem_alvo", "texto": "Disparo que não atingiu ninguém", "pontos": -3 },
+        { "id": "algemas_sem_motivo", "texto": "Algemou sem resistência, fuga ou perigo", "pontos": -4, "feedback": "Súmula Vinculante 11: algemas só com resistência, fundado receio de fuga ou perigo, justificadas por escrito." }
+      ],
+      "falhas_graves": [
+        { "id": "disparo_injustificado", "texto": "Atirou em quem não oferecia ameaça", "pontos": -25, "base": "CP arts. 23 e 25" },
+        { "id": "tiro_fuga", "texto": "Atirou em quem fugia sem ameaçar", "pontos": -25, "base": "CP art. 23 · Lei 13.060/2014", "validar": true },
+        { "id": "tiro_com_civis", "texto": "Atirou com civis na linha de tiro", "pontos": -25, "base": "Uso da força · ADPF 635" },
+        { "id": "omissao_socorro", "texto": "Não pediu socorro ao ferido", "pontos": -15, "base": "CP art. 135 · ADPF 635" }
+      ]
+    },
+    { "id": "f4_apreensao", "nome": "Fase 4 · Apreensão e cadeia de custódia",
+      "acoes": [
+        { "id": "apreender_custodia", "texto": "Fotografou, separou e lacrou o material encontrado", "pontos": 10, "base": "CPP arts. 158-A a 158-F", "validar": true },
+        { "id": "arma_segura", "texto": "Descarregou e lacrou a arma sem apontá-la para ninguém", "pontos": 6, "base": "Segurança no manuseio · CPP art. 158-B", "condicao": "variacao.missao == 'residencia' || variacao.suspeito != 'rende'" },
+        { "id": "celular_sem_acessar", "texto": "Apreendeu o celular sem acessar o conteúdo", "pontos": 5, "base": "CF art. 5º, XII · STF/STJ (acesso exige ordem judicial)", "condicao": "variacao.missao == 'deposito' || variacao.missao == 'bar' || variacao.missao == 'oficina'", "validar": true }
+      ],
+      "erros": [
+        { "id": "pegar_sem_registro", "texto": "Recolheu material sem fotografar nem lacrar", "pontos": -5 }
+      ],
+      "falhas_graves": [
+        { "id": "acessar_celular", "texto": "Leu as mensagens do celular apreendido sem ordem judicial", "pontos": -15, "base": "CF art. 5º, XII", "validar": true }
+      ]
+    },
+    { "id": "f5_encerramento", "nome": "Fase 5 · Enquadramento e registro",
+      "acoes": [
+        { "id": "enquadramento_correto", "texto": "Enquadrou a ocorrência corretamente", "pontos": 12, "base": "Lei 11.343/2006 · Lei 10.826/2003 · CP" },
+        { "id": "registro_completo", "texto": "Registrou tudo (local, horário, testemunhas, câmera corporal)", "pontos": 5, "base": "ADPF 635 · procedimento" }
+      ],
+      "erros": [
+        { "id": "enquadramento_errado", "texto": "Enquadramento errado", "pontos": -8 },
+        { "id": "prisao_indevida", "texto": "Prendeu quem não devia (usuário, denúncia falsa)", "pontos": -10 }
+      ],
+      "falhas_graves": []
+    }
+  ],
+
+  "radio": {
+    "inicio": "Guarnição, Disque-Denúncia: {denuncia} Verifiquem com cautela. Há escola e posto de saúde na comunidade.",
+    "chegada": "Ciente, guarnição. Mantenham a central informada.",
+    "apoio": "Apoio a caminho. Chegada em cerca de cinco minutos.",
+    "socorro": "Ciente. Ambulância acionada. Preservem o local e prestem os primeiros socorros.",
+    "mandado": "Ciente. A delegacia vai representar pelo mandado de busca. Mantenham a observação, sem entrar.",
+    "crise": "Ciente. Equipe especializada e negociador a caminho. Mantenham o isolamento, sem entrar.",
+    "final": "Ciente, guarnição. Conduzam à delegacia. Encerrando."
+  },
+  "denuncias": {
+    "deposito": "estão guardando droga no térreo da casa de esquina da escadaria grande, lá no alto.",
+    "residencia": "o morador da casa da escadaria, lá no alto, guarda uma arma em casa.",
+    "bar": "estão vendendo droga no balcão do bar da praça.",
+    "oficina": "estão desmontando moto roubada na oficina do caminho de baixo."
+  },
+
+  "dialogos": {
+    "parceiro": [
+      { "id": "cobertura", "fala": "Vamos subir em lanço: um avança, o outro cobre.", "acao": "combinar_parceiro" },
+      { "id": "direto", "fala": "Bora subir direto, rápido.", "erro": "subir_correndo", "feedback": "Na escadaria, o deslocamento com cobertura evita ser surpreendido de cima." }
+    ],
+    "olheiro": [
+      { "id": "comunicar", "fala": "Informar pelo rádio: olheiro na laje avisou da nossa chegada.", "acao": "evento_ok" },
+      { "id": "apontar", "fala": "Apontar a arma para ele e mandar descer.", "erro": "arma_sem_ameaca", "feedback": "Ele só observava, sem arma à vista. Comunicar e seguir com atenção." },
+      { "id": "revistar", "fala": "Subir na laje e revistar o rapaz.", "erro": "abordagem_sem_suspeita", "feedback": "Rádio na mão, sozinho, não é fundada suspeita de crime (CPP art. 244)." }
+    ],
+    "moradora": [
+      { "id": "cumprimentar", "fala": "\"Bom dia, senhora. Com licença, polícia passando.\"", "acao": "evento_ok" },
+      { "id": "revistar", "fala": "\"Abre a sacola aí, senhora.\"", "erro": "abordagem_sem_suspeita", "feedback": "Nada indicava crime. Busca pessoal exige fundada suspeita (CPP art. 244)." }
+    ],
+    "crianca": [
+      { "id": "proteger", "fala": "\"Ei, campeão, entra em casa um pouquinho, tá?\" (e aguardar)", "acao": "evento_ok" },
+      { "id": "seguir", "fala": "Seguir subindo, arma em pronto emprego.", "falha": "crianca_na_linha", "feedback": "Com criança no caminho, primeiro tirá-la da área de risco." }
+    ],
+
+    "deposito_porta": [
+      { "id": "observar", "fala": "Observar da porta, sem entrar, e anunciar: \"Polícia!\"", "acao": "identificar_se" }
+    ],
+    "deposito_decisao": [
+      { "id": "entrar", "fala": "Entrar: há crime acontecendo agora (flagrante)" },
+      { "id": "cercar", "fala": "Não entrar: cercar, manter observação e pedir mandado pelo rádio" },
+      { "id": "forcar", "fala": "Entrar mesmo assim e procurar: a denúncia basta" }
+    ],
+
+    "residencia_porta": [
+      { "id": "explicar", "fala": "\"Bom dia. Polícia Militar. Recebemos uma denúncia e preciso conversar com o senhor.\"", "acao": "identificar_se" },
+      { "id": "empurrar", "fala": "\"Abre aí, é a polícia, vamos entrar!\"", "erro": "ameacar_morador" }
+    ],
+    "residencia_pedido": [
+      { "id": "pedir", "fala": "\"O senhor autoriza a nossa entrada para verificar? Vou registrar pela câmera e o vizinho acompanha.\"" },
+      { "id": "forcar", "fala": "Entrar à força: a denúncia basta" }
+    ],
+    "residencia_tranca": [
+      { "id": "isolar", "fala": "Recuar, isolar a casa, falar com ele de fora e pedir apoio especializado", "acao": "isolar_conter" },
+      { "id": "invadir", "fala": "Arrombar a porta e entrar", "falha": "invadir_crise" }
+    ],
+    "familia": [
+      { "id": "retirar", "fala": "\"Senhora, venha com a criança para cá fora, por favor.\"", "acao": "proteger_familia" }
+    ],
+
+    "bar_frequentadores": [
+      { "id": "afastar", "fala": "\"Pessoal, polícia! Todo mundo pra trás, mãos à vista, encostem no muro.\"", "acao": "proteger_terceiros" },
+      { "id": "ir_direto", "fala": "Ir direto ao balcão, sem falar com ninguém" }
+    ],
+    "bar_frequentador": [
+      { "id": "conversar", "fala": "Conversar e liberar: só estava bebendo", "acao": "busca_com_suspeita" },
+      { "id": "revistar", "fala": "Revistar" }
+    ],
+    "bar_dono": [
+      { "id": "perguntar", "fala": "\"O senhor é o dono? Quem estava no balcão?\"" }
+    ],
+
+    "oficina_dono": [
+      { "id": "documento", "fala": "\"Bom dia. O senhor tem o documento dessa moto? Vou conferir o chassi.\"", "acao": "identificar_se" },
+      { "id": "prender", "fala": "\"Moto roubada, né? Mão na cabeça!\"", "erro": "ameacar_morador" }
+    ],
+
+    "algemas": [
+      { "id": "algemar_justificado", "fala": "Algemar: ele resistiu, fugiu ou estava armado (justificar no registro)" },
+      { "id": "nao_algemar", "fala": "Não algemar: está calmo e colaborando" }
+    ],
+    "socorro": [
+      { "id": "socorrer", "fala": "Pedir ambulância e prestar os primeiros socorros", "acao": "socorro" },
+      { "id": "nao", "fala": "Deixar para depois" }
+    ],
+    "registro": [
+      { "id": "completo", "fala": "Registrar tudo: local, horário, testemunhas, câmera corporal, material apreendido", "acao": "registro_completo" },
+      { "id": "resumido", "fala": "Registro resumido, só o essencial" }
+    ],
+
+    "enquadramento": {
+      "deposito": [
+        { "id": "trafico", "fala": "Tráfico de drogas (Lei 11.343/2006, art. 33): prisão em flagrante e apreensão" },
+        { "id": "uso", "fala": "Porte para consumo (art. 28): termo circunstanciado" },
+        { "id": "mandado", "fala": "Sem entrada: relatório e representação por mandado de busca" }
+      ],
+      "residencia": [
+        { "id": "posse_12", "fala": "Posse irregular de arma de uso permitido (Lei 10.826/2003, art. 12)" },
+        { "id": "posse_16", "fala": "Posse de arma de uso restrito / sem numeração (art. 16)" },
+        { "id": "mandado", "fala": "Sem entrada: relatório e representação por mandado de busca" },
+        { "id": "crise", "fala": "Crise em andamento: passar o comando à equipe especializada" }
+      ],
+      "bar": [
+        { "id": "trafico", "fala": "Tráfico (art. 33) para o vendedor; usuário: termo circunstanciado (art. 28)" },
+        { "id": "todos", "fala": "Prender todos os presentes por tráfico" }
+      ],
+      "oficina": [
+        { "id": "liberar", "fala": "Moto regular: denúncia não confirmada, encerrar sem prisão" },
+        { "id": "adulteracao", "fala": "Adulteração de sinal identificador (CP art. 311) e receptação (art. 180)" }
+      ]
+    }
+  },
+
+  "falas": {
+    "parceiro_resposta": "Fechado. Eu vou na frente, você cobre o alto.",
+    "parceiro": "Tô contigo. Olho nas lajes.",
+    "apoio": "Apoio na posição.",
+    "olheiro": "(fala no rádio) Ó a polícia subindo aí, ó!",
+    "moradora": "Bom dia, moço. Vai com Deus.",
+    "crianca": "Tá bom! (entra correndo)",
+    "vigia_rende": "Calma, calma! Tô sem nada, perdi!",
+    "vigia_foge": "(sai correndo pela escadaria)",
+    "vigia_atira": "Sai fora, polícia!",
+    "morador_porta": "Bom dia. O que houve?",
+    "morador_autoriza": "Pode entrar, não tenho nada a esconder. A arma é do meu pai, tá no armário do quarto.",
+    "morador_recusa": "Não autorizo, não. Se tiverem mandado, eu abro.",
+    "morador_tranca": "Ninguém entra aqui! Vai embora!",
+    "mulher": "Tá bom, tá bom. Vem, filho.",
+    "vendedor_rende": "Tá, tá, perdi, perdi!",
+    "vendedor_foge": "(pula o balcão e corre para a escada)",
+    "vendedor_atira": "Sai daqui!",
+    "dono_bar": "Eu só vendo cerveja, seu policial. O rapaz do balcão eu não conheço direito.",
+    "frequentador_cidadao": "Tô só tomando uma, chefe. Trabalho aqui embaixo.",
+    "frequentador_usuario": "Tenho só um pouquinho aqui, pra mim.",
+    "dono_oficina_apresenta": "Tá aqui o documento, tudo certinho. Pode olhar o chassi.",
+    "dono_oficina_cliente": "Essa aí é de um cliente, eu não sei de nada não.",
+    "dono_oficina_foge": "(pega a maleta e corre)"
+  },
+
+  "historia": [
+    { "titulo": "1 · Bar da praça", "texto": "Denúncia de venda no balcão do bar. Há frequentadores nas mesas.", "variacao": { "missao": "bar", "evento": "moradora", "suspeito": "rende", "frequentador": "usuario" } },
+    { "titulo": "2 · Depósito na escadaria", "texto": "Denúncia de droga guardada num térreo.", "variacao": { "missao": "deposito", "evento": "olheiro", "suspeito": "foge", "deposito_indicios": "visiveis" } },
+    { "titulo": "3 · Arma em casa", "texto": "Denúncia de arma guardada numa residência.", "variacao": { "missao": "residencia", "evento": "crianca", "morador": "recusa", "familia": "mulher_crianca", "arma_casa": "revolver" } },
+    { "titulo": "4 · Oficina", "texto": "Denúncia de moto roubada.", "variacao": { "missao": "oficina", "evento": "moradora", "moto": "regular", "dono_oficina": "apresenta" } }
+  ],
+
+  "base_legal": {
+    "CF art. 5º, XI": "A casa é asilo inviolável; entrada sem consentimento só em flagrante, desastre, socorro ou, de dia, com ordem judicial.",
+    "STF RE 603.616 (Tema 280)": "Entrada forçada sem mandado é lícita quando amparada em fundadas razões, justificadas depois. [validar]",
+    "STJ HC 598.051": "O consentimento do morador deve ser comprovado (registro em vídeo/escrito). [validar]",
+    "CPP art. 244": "Busca pessoal sem mandado exige fundada suspeita.",
+    "CPP arts. 158-A a 158-F": "Cadeia de custódia dos vestígios.",
+    "Lei 11.343/2006": "Art. 28 (porte para consumo), art. 33 (tráfico), art. 40, IV (aumento com arma).",
+    "Lei 10.826/2003": "Art. 12 (posse irregular, uso permitido), art. 14 (porte), art. 16 (uso restrito / numeração suprimida).",
+    "CP arts. 23 e 25": "Excludentes de ilicitude; legítima defesa.",
+    "CP arts. 180 e 311": "Receptação; adulteração de sinal identificador de veículo.",
+    "Súmula Vinculante 11": "Uso de algemas só em caso de resistência, fundado receio de fuga ou perigo, justificado por escrito.",
+    "ECA arts. 18 e 232": "Proteção da criança; vedação a constrangimento.",
+    "Lei 13.060/2014": "Uso de instrumentos de menor potencial ofensivo; não atirar em quem foge desarmado.",
+    "Lei 13.869/2019, art. 22": "Abuso de autoridade: invadir imóvel sem autorização legal. [validar]",
+    "ADPF 635 (STF)": "Regras para operações policiais em comunidades do RJ (câmeras, socorro, escolas e unidades de saúde). [validar]",
+    "_nota": "Rascunho: pontos marcados [validar] dependem de conferência pelos instrutores."
+  }
+}

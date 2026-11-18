@@ -1,0 +1,702 @@
+
+  /* ================= FAVELA: locais, pecas interativas e personagens ================= */
+  const ALT = (x, z, y) => ctx.alturaChao(x, z, y) ?? y;
+  const PT = (x, y, z) => new THREE.Vector3(x, ALT(x, z, y), z);          // y = altura aproximada do piso
+  const olharPara = (dx, dz) => Math.atan2(dx, dz);                       // giro para o personagem (frente +Z) olhar para (dx, dz)
+  const PARTIDA = [0, 40], OLHAR_PARTIDA = -Math.PI / 3;
+  // destino de cada missao (x, y do piso, z) e raio de chegada
+  const LOC = {
+    deposito:   { alvo: [55.4, 18.0, -7.4], nome: 'Depósito (térreo da Casa 67, Escadaria 5)', raio: 6 },
+    residencia: { alvo: [37.0, 19.0, -6.4], nome: 'Residência (acesso pela escadaria)', raio: 6 },
+    bar:        { alvo: [10.0, 9.5, 16.0], nome: 'Bar da praça', raio: 8 },
+    oficina:    { alvo: [-31.8, -.8, 36.6], nome: 'Oficina (Caminho inferior, Casa 28)', raio: 7 }
+  };
+  // rotas de fuga (correndo, seguindo o chao)
+  const FUGA = {
+    deposito: [[55.6, -7.6], [57.6, -8.5], [58.2, -13], [58.0, -18], [57.0, -24]],
+    bar: [[10.5, 16.2], [7.0, 17.6], [4.6, 18.4], [3.5, 21.0], [2.5, 25.0]],
+    oficina: [[-31.8, 35.2], [-31.8, 37.2], [-26, 39], [-20, 39.5], [-14, 40]]
+  };
+  // eventos do caminho: lado leste (deposito, residencia, bar) ou oeste (oficina)
+  const EVENTO = {
+    leste: { olheiro: [15, 3.1, 31, olharPara(-1, .6)], moradora: [12, -2, 37.5, olharPara(-1, .2)], crianca: [9, -2.6, 38.0, olharPara(-1, 0)] },
+    oeste: { olheiro: [-20, 7.7, 28, olharPara(1, .6)], moradora: [-12, -1.6, 40, olharPara(1, 0)], crianca: [-14, -1.6, 40.2, olharPara(1, 0)] }
+  };
+  const invisivelM = () => new THREE.MeshBasicMaterial({ visible: false });
+
+  // pecas separadas do bake (web/interativos): mesma luz do cenario. As de apreensao recebem uma area de clique.
+  const ITEM = {
+    dep_pacotes: { nome: 'Pacotes', tipo: 'droga', texto: 'Cinco pacotes embalados com fita, sobre a mesa.' },
+    dep_balanca: { nome: 'Balança de precisão', tipo: 'prova', texto: 'Balança de bancada, com resíduo de pó.' },
+    dep_bolsa: { nome: 'Bolsa de lona', tipo: 'droga', texto: 'Bolsa de lona aberta, com mais pacotes no fundo.' },
+    dep_caderno: { nome: 'Caderno de anotações', tipo: 'prova', texto: 'Caderno com nomes, valores e datas (contabilidade).' },
+    dep_celular: { nome: 'Celular', tipo: 'celular', texto: 'Celular sobre a mesa, com mensagens chegando.' },
+    dep_radio: { nome: 'Rádio comunicador', tipo: 'prova', texto: 'Rádio portátil ligado na frequência dos olheiros.' },
+    dep_recibos: { nome: 'Recibos e anotações', tipo: 'prova', texto: 'Recibos e papéis com anotações.' },
+    bar_pacotes: { nome: 'Pacotes no balcão', tipo: 'droga', texto: 'Seis pacotes pequenos com fita, prontos para venda.' },
+    bar_balanca: { nome: 'Balança', tipo: 'prova', texto: 'Balança pequena no balcão.' },
+    bar_dinheiro: { nome: 'Maços de dinheiro', tipo: 'dinheiro', texto: 'Maços de notas trocadas, típicos de venda a varejo.' },
+    bar_radios: { nome: 'Rádios portáteis', tipo: 'prova', texto: 'Dois rádios portáteis ligados.' },
+    bar_celulares: { nome: 'Celulares', tipo: 'celular', texto: 'Dois celulares no balcão.' },
+    ofi_maleta: { nome: 'Maleta com celulares', tipo: 'celular', texto: 'Maleta com dois celulares sem nota.' },
+    ofi_documentos: { nome: 'Documentos da moto', tipo: 'documento', texto: 'Documento de registro e nota de serviço.' }
+  };
+  const itens = {}, hitsItem = [];
+  const decor = [];                                                       // portas e portao (so cenario)
+  let infoInt = {};
+  const itensProntos = fetch(HQ('interativos/interativos.json')).then(r => r.json()).then(info => {
+    infoInt = info;
+    return Promise.all(Object.keys(info).map(k => ctx.loaderGLB.loadAsync(HQ('interativos/' + k + '.glb')).then(g => {
+      g.scene.traverse(o => { if (o.isMesh) { o.material.side = THREE.DoubleSide; o.material.fog = true; } });
+      scene.add(g.scene);
+      if (!ITEM[k]) { decor.push(g.scene); return; }
+      const [x0, y0, z0] = info[k].min, [x1, y1, z1] = info[k].max;
+      const h = new THREE.Mesh(new THREE.BoxGeometry(Math.max(.3, x1 - x0 + .12), Math.max(.25, y1 - y0 + .12), Math.max(.3, z1 - z0 + .12)), invisivelM());
+      h.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); h.userData.item = k; scene.add(h); h.updateMatrixWorld(true);
+      itens[k] = { o: g.scene, h, ...ITEM[k] }; hitsItem.push(h);
+    }).catch(e => console.warn('peca nao carregou', k, e))));
+  }).catch(() => { });
+  // arma da residencia (enquanto o autor nao manda o revolver/fuzil: a pistola atual), sobre a cama do casal
+  const armaCasa = new THREE.Group(); armaCasa.visible = false; scene.add(armaCasa);
+  gl.loadAsync(HQ('modelos/arma.glb')).then(g => armaCasa.add(prep(g.scene.clone()))).catch(() => { });
+  const hitArmaCasa = new THREE.Mesh(new THREE.BoxGeometry(.5, .3, .5), invisivelM()); hitArmaCasa.userData.item = 'arma_casa'; armaCasa.add(hitArmaCasa);
+  const POS_ARMA_CASA = [48.5, 19.9, -4.9];      // sobre o colchao da cama do casal (topo a 19,6 m)
+
+  // marcador do destino (modo treino): coluna de luz ambar que se ve de longe
+  const marcador = new THREE.Group(); marcador.visible = false; scene.add(marcador);
+  {
+    const m = new THREE.MeshBasicMaterial({ color: 0xf0a340, transparent: true, opacity: .28, depthWrite: false, fog: false, side: THREE.DoubleSide });
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(.35, .35, 30, 16, 1, true), m); col.position.y = 15; marcador.add(col);
+    const anel = new THREE.Mesh(new THREE.RingGeometry(.9, 1.1, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xf0a340, transparent: true, opacity: .8, depthWrite: false, fog: false }));
+    anel.position.y = .05; marcador.add(anel);
+  }
+
+  /* ================= variacoes ================= */
+  function derivar(v) {
+    v.lado = v.missao === 'oficina' ? 'oeste' : 'leste';
+    v.ferido = 'nao';
+    if (v.missao === 'residencia' && v.morador !== 'tranca') v.suspeito = 'rende';
+    if (v.missao === 'oficina') v.suspeito = v.dono_oficina === 'foge' ? 'foge' : 'rende';
+    return v;
+  }
+  function sortear() {
+    const forc = Object.fromEntries((new URLSearchParams(location.search).get('v') || '').split(',').filter(Boolean).map(p => p.split(':')));
+    const v = {};
+    for (const [k, ops] of Object.entries(CEN.variacoes)) v[k] = forc[k] && ops.includes(forc[k]) ? forc[k] : ops[Math.floor(Math.random() * ops.length)];
+    return derivar(v);
+  }
+
+  /* ================= personagens ================= */
+  // chave -> [papel do manifest, nome na tela, voz, altura]
+  const PAPEL = {
+    parceiro: ['pm_parceiro', 'Policial parceiro', 'm', 1.8], apoio: ['pm_apoio', 'Policial de apoio', 'm', 1.8],
+    vigia: ['vigia', 'Homem no depósito', 'm', 1.8], vendedor: ['vendedor', 'Homem no balcão', 'm', 1.8],
+    dono_bar: ['dono_bar', 'Dono do bar', 'm', 1.75], frequentador_a: ['frequentador_a', 'Frequentador', 'm', 1.78],
+    frequentador_b: ['frequentador_b', 'Frequentadora', 'f', 1.68], morador: ['morador', 'Morador', 'm', 1.8],
+    mulher: ['mulher', 'Mulher do morador', 'f', 1.66], filho: ['crianca', 'Criança', 'c', 1.3],
+    dono_oficina: ['dono_oficina', 'Dono da oficina', 'm', 1.78],
+    olheiro: ['olheiro', 'Rapaz na laje', 'm', 1.75], moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
+  };
+  const SUSPEITO = { deposito: 'vigia', bar: 'vendedor', oficina: 'dono_oficina', residencia: 'morador' };
+  function limparNPCs() { Object.values(npcs).forEach(n => scene.remove(n)); for (const k in npcs) delete npcs[k]; }
+  function novoNPC(chave, x, y, z, giro) {
+    const [papel, nome, voz, alt] = PAPEL[chave];
+    const n = personagem(papel, nome, 0x3d4045, alt);
+    n.userData.modelo?.traverse(o => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map(m => ctx.iluminar(m.clone())) : ctx.iluminar(o.material.clone()); });
+    Object.assign(n.userData, { chave, voz, fig: true, giroBase: giro, altura: alt });
+    n.position.copy(PT(x, y, z)); n.rotation.y = giro; scene.add(n); npcs[chave] = n;
+    return n;
+  }
+  function papeisDaMissao(v) {
+    const L = ['parceiro', 'apoio', v.evento === 'crianca' ? 'crianca_rua' : v.evento];
+    if (v.missao === 'deposito') L.push('vigia');
+    if (v.missao === 'bar') L.push('vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b');
+    if (v.missao === 'oficina') L.push('dono_oficina');
+    if (v.missao === 'residencia') { L.push('morador'); if (v.familia === 'mulher_crianca') L.push('mulher', 'filho'); }
+    return L;
+  }
+  function criarNPCs(v) {
+    limparNPCs();
+    for (const g of ARMAS_NPC) g.visible = false;
+    novoNPC('parceiro', PARTIDA[0] + 1.2, -2.5, PARTIDA[1] + .8, OLHAR_PARTIDA);
+    const ap = novoNPC('apoio', PARTIDA[0], -2.5, PARTIDA[1], 0); ap.visible = false;
+    // evento do caminho
+    const ev = EVENTO[v.lado][v.evento], ke = v.evento === 'crianca' ? 'crianca_rua' : v.evento;
+    const ne = novoNPC(ke, ev[0], ev[1], ev[2], ev[3]); ne.userData.evento = true;
+    if (ke === 'crianca_rua') { ne.userData.base = 'fut_parado'; animar(ne, 'fut_parado', 1e6, 0); }
+    if (ke === 'olheiro') { ne.userData.base = 'parada'; }
+    if (v.missao === 'deposito') { const n = novoNPC('vigia', 52.7, 18.1, -7.6, olharPara(1, 0)); n.userData.arma = armaNPC; }
+    if (v.missao === 'bar') {
+      const n = novoNPC('vendedor', 11.2, 9.5, 15.0, olharPara(0, 1)); n.userData.arma = armaNPC2;
+      novoNPC('dono_bar', 15.9, 9.5, 15.1, olharPara(-1, .3));
+      novoNPC('frequentador_a', 8.5, 9.5, 16.3, olharPara(1, -.4)); novoNPC('frequentador_b', 7.4, 9.5, 15.2, olharPara(1, 0));
+    }
+    if (v.missao === 'oficina') novoNPC('dono_oficina', -32.6, -.8, 33.2, olharPara(0, 1));
+    if (v.missao === 'residencia') {
+      const n = novoNPC('morador', 37.25, 18.9, -7.45, olharPara(-.3, 1));      // saiu ao patamar para atender, de frente para a escada n.userData.arma = armaNPC3;
+      if (v.familia === 'mulher_crianca') { novoNPC('mulher', 41.5, 18.9, -5.8, olharPara(-1, -.3)); novoNPC('filho', 42.2, 18.9, -5.3, olharPara(-1, -.3)); }
+    }
+  }
+  const rota = (n, pts, vel, anim, aoChegar) => {
+    const u = n.userData; u.rota = pts.map(([x, z]) => new THREE.Vector3(x, n.position.y, z)); u.destino = null; u.vel = vel;
+    u.aoChegar = () => { animar(n, u.base || 'parada', 1e6, .3); aoChegar?.(); };
+    animar(n, u.acoes?.[anim] ? anim : 'andando', 1e6, .25);
+  };
+  const diz = (n, texto, gesto = 'falando') => n ? dizer(n, n.userData.nome, { texto, gesto }, n.userData.voz) : Promise.resolve();
+  const F = k => CEN.falas[k] || '';
+
+  /* ================= paineis de opcoes ================= */
+  const fechar = () => dialogo.esconder();
+  function dica(texto, seg = 6) { if (S.modo !== 'avaliacao' && S.ativo) legenda('Dica do instrutor', texto, seg); }
+  function painelOpc(tag, titulo, lista, aoEscolher, texto = '', voltar = true) {
+    fecharPaineis();
+    dialogo.mostrar({ tag, titulo, texto, botoes: [...lista.map(op => ({ label: op.fala, acao: () => {
+      fechar();
+      if (op.acao) registrar(op.acao);
+      if (op.erro) registrar(op.erro);
+      if (op.falha) registrar(op.falha);
+      if (op.feedback && S.modo === 'treino') setTimeout(() => legenda('Instrutor', op.feedback, 7), 2400);
+      aoEscolher?.(op);
+    } })), ...(voltar ? [{ label: 'Voltar', acao: fechar }] : [])] });
+  }
+
+  /* ================= suspeito: rende, foge ou atira ================= */
+  function renderNPC(n, largou) {
+    const u = n.userData; if (u.caido) return;
+    u.ameaca = false; u.atira = false; u.fugindo = false; u.rendido = true; u.rota = []; u.destino = null; u.aoChegar = null;
+    if (u.arma?.visible) { u.arma.visible = false; if (largou) armaChao(n.position, u.chave); }
+    u.base = 'rendido'; animar(n, 'rendido', 1e6, .25); sincAmeaca(); status();
+  }
+  function reagir(n) {                                         // reacao do suspeito quando a policia se anuncia
+    const u = n?.userData, v = S.variacao; if (!n || u.reagiu || u.caido) return; u.reagiu = true;
+    if (v.suspeito === 'rende') { diz(n, F(u.chave + '_rende') || F('vigia_rende')).then(() => renderNPC(n)); return; }
+    if (v.suspeito === 'foge') {
+      A.resistiu = true; legenda(n.userData.nome, F(u.chave + '_foge') || '(sai correndo)', 3);
+      if (u.chave === 'dono_oficina' && itens.ofi_maleta) { itens.ofi_maleta.o.visible = false; itens.ofi_maleta.h.visible = false; A.levouMaleta = true; }
+      u.fugindo = true; u.base = 'parada';
+      rota(n, FUGA[v.missao] || [], 3.6, 'correndo', () => { if (u.rendido || u.caido) return; n.visible = false; u.fugiu = true; u.fugindo = false; A.fugiu = true;
+        legenda('Instrutor', 'O suspeito fugiu. Comunique a direção e as características pelo rádio; não se persegue sozinho pelas vielas.', 7); status(); });
+      if (S.modo === 'treino') dica('Ele está fugindo, desarmado. Aponte para ele e dê a ordem de parar (gatilho/clique). Não atire em quem foge sem ameaçar.', 7);
+      return;
+    }
+    // atira
+    A.resistiu = true; u.ameaca = true; u.atira = true; u.proxTiro = performance.now() + 1300;
+    if (u.arma) u.arma.visible = true; u.base = 'apontando'; animar(n, u.acoes?.apontando ? 'apontando' : 'nervoso', 1e6, .2);
+    diz(n, F(u.chave + '_atira') || F('vigia_atira'), null);
+    S.variacao.armado = 'sim'; sincAmeaca(); status();
+    legenda('Alerta', 'Ele sacou uma arma e vai atirar! Abrigue-se e reaja.', 5);
+  }
+  function ordemVerbal(n) {
+    const u = n?.userData; if (!u || u.caido || u.rendido) return false;
+    registrar('ordem_verbal'); legenda('Você', 'Parado! Polícia! Larga a arma e mão na cabeça!', 2.5);
+    if (u.fugindo) {                                            // perto, ele para e se rende; longe, segue fugindo
+      camera.getWorldPosition(V);
+      if (V.distanceTo(n.position) < 12) setTimeout(() => { diz(n, 'Tá bom, tá bom, perdi!'); renderNPC(n); }, 700);
+      return true;
+    }
+    if (u.ameaca && !u.ordem) { u.ordem = true; }               // quem esta atirando nao obedece nesta variacao
+    return true;
+  }
+  function menuAlgemas(n) {
+    const u = n.userData; if (u.algemado) return legenda(u.nome, 'Algemado, aguardando a condução.', 3);
+    const precisa = !!A.resistiu;
+    painelOpc('Condução', u.nome, CEN.dialogos.algemas, op => {
+      if (op.id === 'algemar_justificado') {
+        if (precisa) registrar('algemas_justificadas'); else registrar('algemas_sem_motivo');
+        u.algemado = true; window.__som?.tocar('algemas', n.position); u.base = 'algemado'; animar(n, 'algemado', 1e6, .3);
+      } else if (!precisa) registrar('algemas_justificadas');
+      if (u.arma?.visible === false && (u.chave === S.variacao.suspeitoChave)) A.presoOk = true;
+      A.preso = true; status();
+    }, precisa ? 'Ele resistiu (fugiu ou estava armado).' : 'Ele se rendeu e está colaborando.');
+  }
+
+  /* ================= fluxo da ocorrencia ================= */
+  function novaOcorrencia(v, cap) {
+    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
+    A = { n: HIST.length + 1, fase: 'chegada', titulo: cap?.titulo || `Ocorrência ${HIST.length + 1} · ${CEN.nomes_variacao.missao[v.missao]}`, apreendidos: new Set() };
+    criarNPCs(v); sacar(false);
+    for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
+    if (v.missao === 'deposito' && v.deposito_indicios === 'escondidos') for (const k of ['dep_pacotes', 'dep_balanca', 'dep_caderno']) if (itens[k]) { itens[k].o.visible = false; itens[k].h.visible = false; }
+    armaCasa.visible = v.missao === 'residencia'; armaCasa.position.copy(PT(POS_ARMA_CASA[0], POS_ARMA_CASA[1], POS_ARMA_CASA[2])); armaCasa.position.y += .03; armaCasa.rotation.set(0, .6, Math.PI / 2);      // deitada de lado sobre o colchao
+    ctx.pousar(PARTIDA[0], PARTIDA[1]); ctx.setYaw(OLHAR_PARTIDA);
+    const L = LOC[v.missao]; marcador.position.copy(PT(L.alvo[0], L.alvo[1], L.alvo[2])); marcador.visible = S.modo === 'treino';
+    const abrir = () => radio(CEN.radio.inicio.replace('{denuncia}', CEN.denuncias[v.missao])).then(() => dica(`Destino: ${L.nome}. Fale com o parceiro e informe a chegada pelo rádio (menu: T ou botão Y/B).`, 8));
+    if (cap) { fecharPaineis(); menu.mostrar({ tag: 'Modo história', titulo: cap.titulo, texto: cap.texto, longe: 1.3, botoes: [{ label: 'Começar', acao: () => { menu.esconder(); abrir(); } }] }); }
+    else abrir();
+    status();
+  }
+  function falarRadio(tipo) {
+    fecharPaineis();
+    if (tipo === 'chegada') { A.chegada = true; registrar('comunicar_chegada'); radio(CEN.radio.chegada); }
+    if (tipo === 'apoio') {
+      A.apoio = true; radio(CEN.radio.apoio).then(() => setTimeout(() => {
+        const n = npcs.apoio; if (!n || !A) return; camera.getWorldPosition(V); n.position.copy(PT(V.x - 2, V.y, V.z + 2)); n.visible = true; n.userData.segue = true; diz(n, F('apoio'));
+      }, 8000));
+    }
+    if (tipo === 'fuga') { A.comunicouFuga = true; radio('Ciente. Viaturas do entorno avisadas. Não persigam sozinhos.'); }
+    status();
+  }
+  function menuParceiro() {
+    const p = npcs.parceiro;
+    if (A.plano) return diz(p, F('parceiro'));
+    painelOpc('Parceiro', 'Como vamos subir?', CEN.dialogos.parceiro, op => { A.plano = true; if (op.acao) diz(p, F('parceiro_resposta')); });
+  }
+  // evento do caminho
+  function menuEvento(n) {
+    const v = S.variacao, k = v.evento, D = CEN.dialogos[k];
+    if (A.eventoFeito) return diz(n, F(k === 'crianca' ? 'crianca' : k));
+    painelOpc(k === 'olheiro' ? 'Rapaz com rádio na laje' : k === 'moradora' ? 'Moradora na escadaria' : 'Criança no caminho', 'O que fazer', D, op => {
+      A.eventoFeito = true;
+      if (k === 'olheiro' && op.id === 'comunicar') radio('Ciente. Atenção redobrada: a chegada de vocês foi avisada.');
+      if (k === 'crianca' && op.id === 'proteger') { const c = npcs.crianca_rua; diz(c, F('crianca')).then(() => { c.userData.base = 'parada'; rota(c, [[c.position.x - 4, c.position.z - 3]], 3, 'correndo', () => { c.visible = false; }); }); }
+      if (k === 'moradora' && op.id === 'cumprimentar') diz(n, F('moradora'));
+    });
+  }
+  function aoChegar() {
+    A.chegou = true; marcador.visible = false; status();
+    const v = S.variacao;
+    if (v.missao === 'bar') dica('Há frequentadores perto do balcão. Antes de agir, afaste-os (clique em qualquer pessoa).', 7);
+    if (v.missao === 'deposito') dica('Observe da porta, sem entrar: clique no homem ou na porta.', 6);
+    if (v.missao === 'residencia') dica('Fale com o morador na porta.', 5);
+    if (v.missao === 'oficina') dica('Fale com o dono da oficina.', 5);
+  }
+  // ---- deposito
+  function menuDeposito() {
+    const v = S.variacao, n = npcs.vigia;
+    if (!A.anunciou) return painelOpc('Porta do depósito', 'Abordagem', CEN.dialogos.deposito_porta, () => {
+      A.anunciou = true; reagir(n);
+      setTimeout(() => { if (A && !A.decidiuEntrada) decisaoDeposito(); }, v.suspeito === 'atira' ? 9000 : 3500);
+    }, v.deposito_indicios === 'visiveis' ? 'Da porta você vê, sobre a mesa: pacotes embalados com fita, uma balança e um caderno.' : 'Da porta você vê uma mesa vazia, um armário fechado e uma bolsa de lona fechada no chão.');
+    if (!A.decidiuEntrada) return decisaoDeposito();
+  }
+  function decisaoDeposito() {
+    const v = S.variacao;
+    painelOpc('Depósito', 'Entrar ou não?', CEN.dialogos.deposito_decisao, op => {
+      A.decidiuEntrada = true;
+      if (op.id === 'cercar') {
+        if (v.deposito_indicios === 'escondidos') registrar('nao_entrar_sem_razao');
+        A.mandado = true; radio(CEN.radio.mandado); return;
+      }
+      if (v.deposito_indicios === 'visiveis') { registrar('entrada_flagrante'); A.entrou = true; dica('Entrada legítima. Fotografe, separe e lacre o material (clique em cada item).', 7); }
+      else { registrar('invasao_sem_razao'); A.entrou = true; }
+    }, v.deposito_indicios === 'visiveis' ? 'O material está à vista da porta.' : 'Nada indica crime à vista; só há a denúncia anônima.', false);
+  }
+  // ---- residencia
+  function menuMorador(n) {
+    const v = S.variacao, D = CEN.dialogos;
+    if (n.userData.rendido) return menuAlgemas(n);
+    if (!A.anunciou) return painelOpc('Porta da residência', 'Primeiro contato', D.residencia_porta, () => {
+      A.anunciou = true;
+      diz(n, F('morador_porta')).then(() => {
+        if (v.morador === 'tranca') return trancar(n);
+        painelOpc('Morador', 'Pedido de entrada', D.residencia_pedido, op => {
+          if (op.id === 'forcar') { registrar('invasao_sem_razao'); A.entrou = true; return; }
+          if (v.morador === 'autoriza') { registrar('consentimento_registrado'); A.entrou = true; A.consentiu = true; diz(n, F('morador_autoriza')); dica('Entrada autorizada e registrada. A arma está no quarto do casal.', 7); familia(); }
+          else diz(n, F('morador_recusa')).then(() => painelOpc('Morador recusou', 'E agora?', [
+            { id: 'nao_entrar', fala: 'Não entrar: registrar, manter observação e pedir mandado pelo rádio', acao: 'nao_entrar_sem_razao' },
+            { id: 'forcar', fala: 'Entrar à força', falha: 'invasao_sem_razao' }], op2 => {
+              if (op2.id === 'nao_entrar') { A.mandado = true; radio(CEN.radio.mandado); } else { A.entrou = true; }
+            }, '', false));
+        }, '', false);
+      });
+    });
+    diz(n, v.morador === 'autoriza' ? 'O armário é no quarto do casal.' : F('morador_recusa'));
+  }
+  function familia(depois) {
+    if (S.variacao.familia !== 'mulher_crianca' || A.familiaFora) return depois?.();
+    setTimeout(() => painelOpc('Família', 'Mulher e criança na sala', CEN.dialogos.familia, () => {
+      A.familiaFora = true;
+      for (const k of ['mulher', 'filho']) { const n = npcs[k]; if (n) rota(n, [[38.3, -7.4], [37.0, -6.6], [36.6, -4.6], [36.0, -2.8]], 1.4, 'andando'); }
+      diz(npcs.mulher, F('mulher'));
+      if (depois) setTimeout(depois, 2500);
+    }, 'Há uma mulher e uma criança na sala.', false), 1500);
+  }
+  function trancar(n) {
+    const u = n.userData; A.resistiu = true;
+    diz(n, F('morador_tranca'), null);
+    if (u.arma) u.arma.visible = true; u.base = 'apontando'; animar(n, u.acoes?.apontando ? 'apontando' : 'nervoso', 1e6, .2);
+    rota(n, [[38.4, -7.6], [40.5, -6.8], [44.6, -4.6], [46.5, -4.4]], 2.6, 'correndo', () => { n.visible = false; u.trancado = true; });
+    // primeiro a familia sai (se houver); depois a decisao sobre o morador trancado
+    setTimeout(() => familia(() => painelOpc('Morador trancado e armado', 'Decisão', CEN.dialogos.residencia_tranca, op => {
+      if (op.id === 'isolar') { A.isolou = true; radio(CEN.radio.crise); } else A.entrou = true;
+    }, 'Ele entrou no quarto do casal com uma arma e trancou a porta.', false)), 2500);
+  }
+  // ---- bar
+  function menuBar(n) {
+    const v = S.variacao, D = CEN.dialogos, k = n.userData.chave;
+    if (!A.afastou && !A.anunciou) return painelOpc('Bar da praça', 'Há frequentadores perto do balcão', D.bar_frequentadores, op => {
+      A.anunciou = true;
+      if (op.id === 'afastar') {
+        A.afastou = true;
+        for (const [kk, dest] of [['frequentador_a', [6.2, 17.9]], ['frequentador_b', [5.4, 17.4]]]) { const f = npcs[kk]; if (f) rota(f, [dest], 1.3, 'andando', () => { f.rotation.y = olharPara(1, -1); f.userData.giroBase = f.rotation.y; }); }
+        setTimeout(() => reagir(npcs.vendedor), 2200);
+      } else reagir(npcs.vendedor);
+    });
+    if (k === 'vendedor') return n.userData.rendido ? menuAlgemas(n) : ordemVerbal(n);
+    if (k === 'dono_bar') return diz(n, F('dono_bar'));
+    if (/^frequentador/.test(k)) {
+      if (n.userData.conversou) return diz(n, k === 'frequentador_a' && v.frequentador === 'usuario' ? F('frequentador_usuario') : F('frequentador_cidadao'));
+      const usuario = k === 'frequentador_a' && v.frequentador === 'usuario';
+      return painelOpc('Frequentador', n.userData.nome, D.bar_frequentador, op => {
+        n.userData.conversou = true;
+        if (op.id === 'revistar' && !usuario) registrar('abordagem_sem_suspeita');
+        if (op.id === 'conversar' && usuario) A.viuUsuario = true;
+        diz(n, usuario ? F('frequentador_usuario') : F('frequentador_cidadao'));
+        if (usuario) A.usuario = true;
+      });
+    }
+  }
+  // ---- oficina
+  function menuOficina(n) {
+    const v = S.variacao, D = CEN.dialogos;
+    if (n.userData.rendido) return menuAlgemas(n);
+    if (!A.anunciou) return painelOpc('Oficina', 'Abordagem', D.oficina_dono, () => {
+      A.anunciou = true;
+      if (v.dono_oficina === 'foge') return reagir(n);
+      diz(n, F('dono_oficina_' + v.dono_oficina)).then(() => painelOpc('Oficina', 'Conferência', [
+        { id: 'chassi', fala: 'Conferir a numeração do chassi e do motor com o documento', acao: 'conferir_documento' },
+        { id: 'prender', fala: 'Prender logo: a denúncia basta', erro: 'ameacar_morador' }], op => {
+          if (op.id !== 'chassi') return;
+          A.conferiu = true;
+          legenda('Conferência', v.moto === 'regular' ? 'Chassi e motor batem com o documento. Não há registro de roubo: a denúncia não se confirmou.' : 'O chassi está raspado e a placa não bate com o motor.', 7);
+          if (v.moto === 'adulterada') A.resistiu = false;
+        }, '', false));
+    });
+  }
+  // ---- apreensao (cadeia de custodia)
+  function podeApreender() {
+    const v = S.variacao;
+    if (v.missao === 'deposito' || v.missao === 'residencia') return !!A.entrou;
+    return !!A.anunciou;
+  }
+  function usarItem(k) {
+    const it = itens[k], arma = k === 'arma_casa' || k === 'arma_chao';
+    const nome = arma ? 'Arma de fogo' : it.nome, texto = arma ? 'Arma de fogo carregada.' : it.texto;
+    if (!podeApreender()) return legenda('Vestígio', texto + ' Sem entrada legítima, não toque em nada.', 5);
+    const ops = arma ? [
+      { id: 'lacrar', fala: 'Fotografar no lugar, descarregar apontando para local seguro e lacrar', acao: 'arma_segura', tambem: 'apreender_custodia' },
+      { id: 'pegar', fala: 'Pegar e conferir na mão, de frente para o parceiro', erro: 'arma_sem_ameaca' }]
+      : [
+        { id: 'lacrar', fala: 'Fotografar no lugar, separar, lacrar e anotar onde estava e quem achou', acao: 'apreender_custodia', tambem: it.tipo === 'celular' ? 'celular_sem_acessar' : null },
+        { id: 'pegar', fala: 'Recolher direto para a viatura', erro: 'pegar_sem_registro' },
+        ...(it.tipo === 'celular' ? [{ id: 'ler', fala: 'Ler as mensagens para achar os comparsas', falha: 'acessar_celular' }] : [])];
+    painelOpc('Apreensão', nome, ops, op => {
+      if (op.tambem) registrar(op.tambem);
+      if (op.id === 'ler') return legenda('Instrutor', 'O conteúdo do celular só pode ser acessado com ordem judicial (ou consentimento válido).', 6);
+      A.apreendidos.add(k);
+      if (k === 'arma_casa') armaCasa.visible = false; else if (k === 'arma_chao') { armaSolta.visible = false; armaSolta2.visible = false; armaSolta3.visible = false; }
+      else { it.o.visible = false; it.h.visible = false; }
+      legenda('Apreensão', `${nome}: apreendido${op.id === 'lacrar' ? ' e lacrado' : ''}.`, 3); status();
+    }, texto);
+  }
+
+  /* ================= encerramento ================= */
+  function certoEnquadramento() {
+    const v = S.variacao;
+    if (v.missao === 'deposito') return A.entrou && v.deposito_indicios === 'visiveis' ? 'trafico' : 'mandado';
+    if (v.missao === 'residencia') return v.morador === 'tranca' ? 'crise' : v.morador === 'recusa' && !A.entrou ? 'mandado' : v.arma_casa === 'fuzil' ? 'posse_16' : 'posse_12';
+    if (v.missao === 'bar') return 'trafico';
+    return v.moto === 'regular' ? 'liberar' : 'adulteracao';
+  }
+  function decidirFinal() {
+    const v = S.variacao, certo = certoEnquadramento();
+    painelOpc('Rádio · encerramento', 'Enquadramento da ocorrência', CEN.dialogos.enquadramento[v.missao], op => {
+      A.decidiu = true;
+      if (op.id === certo) registrar('enquadramento_correto');
+      else if (op.id === 'todos' || (v.missao === 'oficina' && op.id === 'adulteracao' && certo === 'liberar')) registrar('prisao_indevida');
+      else registrar('enquadramento_errado', op.id);
+      if (S.modo === 'treino') legenda('Instrutor', op.id === certo ? 'Correto.' : 'O correto aqui: ' + CEN.dialogos.enquadramento[v.missao].find(o => o.id === certo)?.fala, 8);
+      setTimeout(() => painelOpc('Encerramento', 'Registro', CEN.dialogos.registro, () => { radio(CEN.radio.final); setTimeout(finalizar, 5000); }, '', false), S.modo === 'treino' ? 4200 : 400);
+    }, 'Resumo: ' + CEN.nomes_variacao.missao[v.missao]);
+  }
+  function finalizar() {
+    if (!A || A.fase === 'fim') return;
+    A.fase = 'fim'; fecharPaineis();
+    if (A.ferido && !A.socorro) registrar('omissao_socorro');
+    sacar(false); status(); setTimeout(concluir, 1500);
+  }
+  function resumo() {
+    const fases = [];
+    for (const f of CEN.fases) {
+      let fp = 0, fo = 0; const its = [];
+      for (const a of f.acoes || []) {
+        if (!cond(a.condicao)) continue;
+        fp += a.pontos; const ok = S.feitos.has(a.id); if (ok) fo += a.pontos;
+        its.push({ texto: a.texto, ok, pontos: ok ? a.pontos : 0, base: a.base, atendimento: A.n });
+      }
+      fases.push({ nome: f.nome, obtidos: fo, possiveis: fp, itens: its });
+    }
+    return { n: A.n, titulo: A.titulo, variacao: { ...S.variacao }, fases };
+  }
+  function concluir() {
+    if (!A) return;
+    HIST.push(resumo()); A = null;
+    if (!S.ativo) return;
+    if (S.fila.length) { const prox = S.fila.shift(); setTimeout(() => novaOcorrencia(derivar({ ...sortear(), ...prox.variacao }), S.historia ? prox : null), 1200); }
+    else encerrar();
+  }
+
+  /* ================= inicio, menu e relatorio ================= */
+  function aviso() {
+    fecharPaineis();
+    menu.mostrar({
+      tag: 'Treinamento · conteúdo sensível · versão ' + (window.__versao || '?'), titulo: 'Favela · denúncias na comunidade',
+      texto: 'Você é policial militar e, com o parceiro, atende uma denúncia na comunidade: depósito de drogas, arma em residência, ponto de venda no bar ou moto roubada. O destino fica no alto: suba pelas escadarias.\n\n' +
+        'Há cenas de confronto armado, com disparos e sangue em adultos.\n' +
+        'Computador: clique fala/usa · T menu · Q saca ou guarda a arma (com ela na mão, o clique dispara) · R recarrega · K checklist.\n' +
+        'Quest: gatilho usa/clica · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · Y ou B abre o menu.',
+      botoes: [
+        { label: 'Modo história (4 ocorrências guiadas)', acao: () => comecar('historia') },
+        { label: 'Modo treino (objetivos, dicas e destino marcado)', acao: () => comecar('treino') },
+        { label: 'Modo avaliação (sem dicas)', acao: () => comecar('avaliacao') },
+        { label: S.voz === false ? 'Voz sintética: desligada (só legendas)' : 'Voz sintética: ligada', acao: () => { S.voz = S.voz === false; aviso(); } },
+        { label: 'Cancelar', acao: () => menu.esconder() }
+      ]
+    });
+  }
+  async function comecar(modo) {
+    fecharPaineis();
+    Object.assign(S, { historia: modo === 'historia', modo: modo === 'avaliacao' ? 'avaliacao' : 'treino' });
+    const v0 = S.historia ? derivar({ ...sortear(), ...CEN.historia[0].variacao }) : sortear();
+    menu.mostrar({ tag: 'Treinamento', titulo: 'Carregando personagens…', texto: 'Aguarde alguns segundos.', botoes: [] });
+    await Promise.race([Promise.all([carregarPapeis(papeisDaMissao(v0).map(k => PAPEL[k][0])), itensProntos]), new Promise(r => setTimeout(r, 40000))]);
+    menu.esconder();
+    HIST.length = 0;
+    Object.assign(S, { ativo: true, inicio: performance.now(), fim: 0, erros: [], graves: [], log: [] });
+    S.fila = S.historia ? CEN.historia.slice(1) : [];
+    document.getElementById('relatorioHTML')?.setAttribute('hidden', '');
+    novaOcorrencia(v0, S.historia ? CEN.historia[0] : null);
+  }
+  function abrirMenu() {
+    if (!S.ativo) return aviso();
+    fecharPaineis();
+    const b = [], v = S.variacao, susp = A && npcs[S.variacao.suspeitoChave];
+    if (A && !A.chegada) b.push({ label: 'Rádio: informar a chegada à comunidade', acao: () => falarRadio('chegada') });
+    if (A && !A.apoio) b.push({ label: 'Rádio: pedir apoio', acao: () => falarRadio('apoio') });
+    if (A?.fugiu && !A.comunicouFuga) b.push({ label: 'Rádio: comunicar a fuga (direção e características)', acao: () => falarRadio('fuga') });
+    if (A?.ferido && !A.socorro) b.push({ label: 'Rádio: pedir socorro médico e comunicar o disparo', acao: () => { fecharPaineis(); A.socorro = true; registrar('socorro'); radio(CEN.radio.socorro); } });
+    if (A?.chegou && !A.decidiu) b.push({ label: 'Rádio: enquadramento e condução (encerrar a ocorrência)', acao: decidirFinal });
+    if (susp?.userData.fugindo) b.unshift({ label: 'Ordenar: "Parado! Polícia!"', acao: () => { menu.esconder(); ordemVerbal(susp); } });
+    if (S.armaNaMao) b.push({ label: `Recarregar a arma (${S.municao ?? CARREGADOR}/${CARREGADOR})`, acao: () => { menu.esconder(); recarregar(); } });
+    b.push({ label: S.armaNaMao ? 'Guardar a arma no coldre' : 'Sacar a arma', acao: () => { sacar(!S.armaNaMao); menu.esconder(); } },
+      { label: 'Checklist desta ocorrência', acao: abrirChecklist },
+      { label: 'Encerrar e ver o relatório', cor: 'rgba(240,80,64,.22)', acao: encerrar },
+      { label: 'Fechar', acao: () => menu.esconder() });
+    menu.mostrar({ tag: 'Menu', titulo: 'Favela', texto: `Tempo: ${fmt(tempo())} · ${A ? A.titulo : 'aguardando'}` + (A && v ? `\nDestino: ${LOC[v.missao].nome}` : ''), botoes: b });
+  }
+  function abrirChecklist() {
+    fecharPaineis();
+    const linhas = CEN.fases.map(f => `${f.nome}: ` + (f.acoes || []).filter(a => cond(a.condicao)).map(a => (S.feitos.has(a.id) ? '✓ ' : '· ') + a.texto).join(' | ')).join('\n');
+    menu.mostrar({ tag: 'Checklist', titulo: 'Checklist da ocorrência', texto: (S.modo === 'avaliacao' ? 'No modo avaliação o checklist só aparece no relatório.' : linhas) + `\n\nTempo: ${fmt(tempo())}`, botoes: [{ label: 'Fechar', acao: () => menu.esconder() }], longe: 1.3 });
+  }
+  function encerrar() {
+    if (!S.ativo) return;
+    if (A) { if (A.ferido && !A.socorro) registrar('omissao_socorro'); HIST.push(resumo()); A = null; }
+    S.fila = []; S.fim = performance.now(); S.ativo = false; fecharPaineis(); sacar(false); marcador.visible = false; status();
+    mostrarRelatorio(relatorio());
+  }
+  function relatorio() {
+    let possiveis = 0, obtidos = 0; const fases = [];
+    CEN.fases.forEach((f, i) => {
+      const fr = { nome: f.nome, obtidos: 0, possiveis: 0, itens: [] };
+      for (const h of HIST) { const x = h.fases[i]; fr.obtidos += x.obtidos; fr.possiveis += x.possiveis; fr.itens.push(...x.itens); }
+      possiveis += fr.possiveis; obtidos += fr.obtidos; fases.push(fr);
+    });
+    const desc = S.erros.reduce((s, e) => s + e.pontos, 0) + S.graves.reduce((s, e) => s + e.pontos, 0);
+    const nota = possiveis ? Math.max(0, Math.round((obtidos + desc) / possiveis * 100)) : 0;
+    const aprovado = nota >= CEN.aprovacao.pontos_minimos && !(CEN.aprovacao.sem_falha_grave && S.graves.length);
+    return { cenario: CEN.id, data: new Date().toISOString(), tempo: fmt(tempo()), modo: S.historia ? 'historia' : S.modo, nota, aprovado, obtidos, descontos: desc, possiveis,
+      atendimentos: HIST.map(h => ({ n: h.n, titulo: h.titulo, variacao: h.variacao })), fases, erros: S.erros, falhas_graves: S.graves, linha_do_tempo: S.log };
+  }
+  function mostrarRelatorio(r) {
+    const varios = r.atendimentos.length > 1, at = e => varios ? ` [ocorr. ${e.atendimento}]` : '';
+    const txtFases = r.fases.map(f => `${f.nome}: ${f.obtidos}/${f.possiveis}`).join('\n');
+    const txtErros = [...r.falhas_graves.map(g => '⚠ FALHA GRAVE: ' + g.texto + (g.base ? ` (${g.base})` : '') + at(g)), ...r.erros.map(e => `• ${e.texto} (${e.pontos})${e.feedback ? ' — ' + e.feedback : ''}` + at(e))].join('\n') || 'Nenhum erro registrado.';
+    menu.mostrar({
+      tag: 'Relatório', titulo: `Nota ${r.nota}/100 · ${r.aprovado ? 'APROVADO' : 'NÃO APROVADO'}`,
+      texto: `Tempo: ${r.tempo} · Ocorrências: ${r.atendimentos.length}\n\n${txtFases}\n\n${txtErros}`,
+      botoes: [{ label: 'Novo treinamento (outras variações)', acao: () => { fecharPaineis(); cenaExploracao(); aviso(); } }, { label: 'Fechar', acao: () => { menu.esconder(); cenaExploracao(); } }], longe: 1.4
+    });
+    const el = document.getElementById('relatorioHTML');
+    if (el) {
+      const NV = CEN.nomes_variacao;
+      const nomeVar = v => Object.keys(NV).filter(k => v[k] && (k === 'missao' || k === 'evento' || relevante(k, v))).map(k => NV[k][v[k]]).join(' · ');
+      const leis = Object.entries(CEN.base_legal).filter(([k]) => k !== '_nota').map(([k, t]) => `<li><b>${k}</b> — ${t}</li>`).join('');
+      el.innerHTML = `<h2>Nota ${r.nota}/100 — ${r.aprovado ? 'aprovado' : 'não aprovado'}</h2>
+        <p>Tempo ${r.tempo} · modo ${r.modo}</p>
+        <ul>${r.atendimentos.map(a => `<li>${a.titulo} — <em>${nomeVar(a.variacao)}</em></li>`).join('')}</ul>
+        ${r.fases.map(f => `<h3>${f.nome} <small>${f.obtidos}/${f.possiveis}</small></h3><ul>${f.itens.map(i => `<li class="${i.ok ? 'ok' : 'nao'}">${i.ok ? '✓' : '✗'} ${i.texto}${varios ? ` [ocorr. ${i.atendimento}]` : ''}${i.base ? ` <em>(${i.base})</em>` : ''}</li>`).join('')}</ul>`).join('')}
+        <h3>Erros e falhas graves</h3><ul>${txtErros.split('\n').map(l => `<li>${l}</li>`).join('')}</ul>
+        <h3>Base legal</h3><ul>${leis}</ul>
+        <p><em>Rascunho para validação com instrutores. Os itens marcados “validar” dependem de norma interna e de jurisprudência atualizada.</em></p>
+        <p><button type="button" id="baixarRel">Baixar relatório (JSON)</button> <button type="button" id="fecharRel">Fechar</button></p>`;
+      el.hidden = false;
+      document.getElementById('baixarRel').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' })); a.download = `relatorio_${r.cenario}_${Date.now()}.json`; a.click(); };
+      document.getElementById('fecharRel').onclick = () => el.hidden = true;
+    }
+  }
+  function relevante(k, v) {
+    const m = v.missao;
+    return ({ suspeito: m !== 'residencia', deposito_indicios: m === 'deposito', morador: m === 'residencia', familia: m === 'residencia', arma_casa: m === 'residencia',
+      frequentador: m === 'bar', moto: m === 'oficina', dono_oficina: m === 'oficina' })[k];
+  }
+
+  /* ================= modo livre (antes de iniciar) ================= */
+  function cenaExploracao() {
+    limparNPCs(); S.vida = 3; S.municao = CARREGADOR; limparSangue(); marcador.visible = false;
+    for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
+    armaCasa.visible = false; for (const g of ARMAS_NPC) g.visible = false;
+  }
+  function explorar(ray) {
+    const hi = ray.intersectObjects(hitsItem.filter(h => h.visible), false)[0];
+    if (hi && hi.distance < 4.5) { const it = itens[hi.object.userData.item]; legenda(it.nome, it.texto, 5); return true; }
+    return false;
+  }
+
+  /* ================= clique / gatilho ================= */
+  const npcVisiveis = () => Object.values(npcs).filter(n => n.visible);
+  function usar(ray, c) {
+    for (const p of paineis) if (p.clique(ray)) return true;
+    if (S.armaNaMao && (!c || c.userData.mao !== 'left')) {
+      // com a arma na mao, clicar em quem foge (ou ameaca) da a ordem verbal primeiro; o segundo clique dispara
+      const susp = A && npcs[S.variacao.suspeitoChave];
+      if (susp?.visible && (susp.userData.fugindo || susp.userData.ameaca) && !susp.userData.ordem && !susp.userData.ordemDada) {
+        const h = ray.intersectObject(susp.userData.hit, false)[0];
+        if (h && h.distance < 25) { susp.userData.ordemDada = true; ordemVerbal(susp); return true; }
+      }
+      return disparar(ray);
+    }
+    if (!S.ativo) return explorar(ray);
+    if (!A || A.fase === 'fim') return false;
+    const hn = ray.intersectObjects(npcVisiveis().map(n => n.userData.hit), false)[0];
+    const alvosI = [...hitsItem.filter(h => h.visible), ...(armaCasa.visible ? [hitArmaCasa] : []), ...(armaSolta.visible || armaSolta2.visible || armaSolta3.visible ? [hitArma] : [])];
+    const hi = ray.intersectObjects(alvosI, false)[0];
+    if (hn && hn.distance < 25 && (!hi || hn.distance < hi.distance)) {
+      const n = Object.values(npcs).find(p => p.userData.hit === hn.object), k = n.userData.chave, u = n.userData;
+      if (u.fugindo && hn.distance < 25) return ordemVerbal(n), true;
+      if (hn.distance > 5) return false;
+      if (u.caido) { painelOpc('Ferido', 'Pessoa baleada', CEN.dialogos.socorro, op => { if (op.acao) { A.socorro = true; radio(CEN.radio.socorro); } }); return true; }
+      if (k === 'parceiro') menuParceiro();
+      else if (k === 'apoio') diz(n, F('apoio'));
+      else if (u.evento) menuEvento(n);
+      else if (u.ameaca) ordemVerbal(n);
+      else if (k === 'vigia') (u.rendido ? menuAlgemas(n) : menuDeposito());
+      else if (k === 'morador') menuMorador(n);
+      else if (k === 'mulher' || k === 'filho') (A.familiaFora ? diz(n, F('mulher')) : familia());
+      else if (S.variacao.missao === 'bar') menuBar(n);
+      else if (k === 'dono_oficina') menuOficina(n);
+      return true;
+    }
+    if (hi && hi.distance < 4) {
+      const k = hi.object.userData.item;
+      if (k === 'arma') usarItem('arma_chao'); else usarItem(k);
+      return true;
+    }
+    // porta do deposito: clicar perto da porta tambem abre a abordagem
+    if (A.chegou && S.variacao.missao === 'deposito' && !A.decidiuEntrada) {
+      const h = ray.intersectObjects(ctx.colisao(), false)[0];
+      if (h && h.distance < 5 && h.point.distanceTo(new THREE.Vector3(...LOC.deposito.alvo)) < 4) { menuDeposito(); return true; }
+    }
+    return false;
+  }
+  function botao(mao) { if (mao === 'right') sacar(!S.armaNaMao); }
+
+  /* ================= objetivos (modo treino) e status ================= */
+  function objetivos() {
+    const L = [], v = S.variacao;
+    if (!A) return ['Aguarde a próxima ocorrência'];
+    if (A.fase === 'fim') return ['Ocorrência concluída'];
+    if (A.ameaca) return ['Agressão armada: abrigue-se e reaja de forma proporcional', `Sua condição: ${S.vida ?? 3} de 3`];
+    if (A.ferido && !A.socorro) L.push('Peça socorro médico pelo rádio (menu)');
+    if (!A.chegada) L.push('Informe a chegada pelo rádio (menu)');
+    if (!A.plano) L.push('Combine o deslocamento com o parceiro');
+    if (!A.chegou) { L.push(`Suba até: ${LOC[v.missao].nome} (coluna âmbar)`); if (!A.eventoFeito) L.push('Atenção às pessoas no caminho'); return L.slice(0, 6); }
+    if (v.missao === 'deposito') { if (!A.anunciou) L.push('Observe da porta e anuncie a polícia'); else if (!A.decidiuEntrada) L.push('Decida se pode entrar'); else if (A.entrou) L.push('Apreenda e lacre o material (clique em cada item)'); }
+    if (v.missao === 'residencia') { if (!A.anunciou) L.push('Fale com o morador'); else if (A.entrou && armaCasa.visible) L.push('Apreenda a arma no quarto do casal'); if (v.familia === 'mulher_crianca' && !A.familiaFora && A.anunciou) L.push('Tire a mulher e a criança da área de risco'); }
+    if (v.missao === 'bar') { if (!A.anunciou) L.push('Afaste os frequentadores e anuncie a polícia'); else L.push('Apreenda o material do balcão'); }
+    if (v.missao === 'oficina') { if (!A.anunciou) L.push('Fale com o dono da oficina'); else if (!A.conferiu && v.dono_oficina !== 'foge') L.push('Confira documento e chassi'); }
+    const susp = npcs[v.suspeitoChave];
+    if (susp?.userData.rendido && !A.preso) L.push('Decida sobre as algemas (clique nele)');
+    if (A.fugiu && !A.comunicouFuga) L.push('Comunique a fuga pelo rádio (menu)');
+    if (!A.decidiu) L.push('Encerre pelo rádio: enquadramento (menu)');
+    return L.slice(0, 6);
+  }
+  function status() {
+    const el = document.getElementById('statusTrein'); if (!el) return;
+    el.hidden = !S.ativo || S.modo === 'treino';
+    el.innerHTML = `<b>${A ? A.titulo : 'Favela'}</b> · ${fmt(tempo())}<br>Na mão: ${S.armaNaMao ? (S.recarregando ? 'arma (recarregando…)' : `arma · ${S.municao ?? CARREGADOR}/${CARREGADOR}`) : 'nada'}`;
+    mostrarObjetivos();
+  }
+
+  /* ================= quadro ================= */
+  let ultimo = performance.now();
+  const PV = new THREE.Vector3(), PD = new THREE.Vector3();
+  function seguir(n, dt) {                                     // parceiro e apoio acompanham o policial, um pouco atras
+    const u = n.userData; if (!n.visible || u.caido) return;
+    camera.getWorldPosition(PV); camera.getWorldDirection(PD); PD.y = 0; PD.normalize();
+    const alvo = PV.clone().addScaledVector(PD, -1.6).add(new THREE.Vector3(-PD.z, 0, PD.x).multiplyScalar(u.chave === 'apoio' ? -1 : 1));
+    const d = Math.hypot(alvo.x - n.position.x, alvo.z - n.position.z);
+    if (d > 25) { n.position.set(alvo.x, ALT(alvo.x, alvo.z, PV.y - 1.5), alvo.z); return; }      // teleporte do policial no Quest
+    if (d > 2.4 && !u.indo) { u.indo = true; animar(n, d > 7 ? 'correndo' : 'andando', 1e6, .25); }
+    if (u.indo) {
+      u.vel = d > 7 ? 3.8 : 1.7; u.destino = new THREE.Vector3(alvo.x, n.position.y, alvo.z);
+      if (d < 1.2) { u.indo = false; u.destino = null; animar(n, 'parada', 1e6, .3); }
+    }
+  }
+  function quadro() {
+    const agora = performance.now(), dt = Math.min(.1, (agora - ultimo) / 1000); ultimo = agora;
+    if (agora > legAte) { leg.visible = false; const hl = document.getElementById('legendaHTML'); if (hl && !hl.hidden) hl.hidden = true; }
+    efeitos(dt); confronto();
+    if (renderer.xr.isPresenting) for (const g of ctx.grips || []) { const quer = !(g.userData.mao === 'right' && S.armaNaMao); if (g.visible !== quer) g.visible = quer; }
+    camera.getWorldPosition(V);
+    if (S.ativo && A && A.fase !== 'fim') {
+      const v = S.variacao, L = LOC[v.missao];
+      if (!A.chegou && Math.hypot(V.x - L.alvo[0], V.z - L.alvo[2]) < L.raio && Math.abs(V.y - 1.6 - L.alvo[1]) < 4) aoChegar();
+      for (const k of ['parceiro', 'apoio']) if (npcs[k]) seguir(npcs[k], dt);
+      // crianca no caminho: passar perto dela com a arma na mao, sem antes protege-la, e falha grave
+      const cr = npcs.crianca_rua;
+      if (cr?.visible && !A.eventoFeito && !A.criancaRisco && S.armaNaMao && V.distanceTo(cr.position) < 4) { A.criancaRisco = true; registrar('crianca_na_linha'); }
+      // olheiro avisa pelo radio quando o policial se aproxima
+      const ol = npcs.olheiro;
+      if (ol && !A.olheiroFalou && V.distanceTo(ol.position) < 16) { A.olheiroFalou = true; window.__som?.tocar('radio_chiado', ol.position); diz(ol, F('olheiro')); }
+      // a crianca chuta a bola de vez em quando
+      if (cr?.visible && !cr.userData.destino && !cr.userData.rota?.length && Math.random() < dt * .25) animar(cr, 'fut_chute', 1.6, .2);
+    }
+    for (const n of Object.values(npcs)) {
+      const u = n.userData;
+      u.mixer?.update(dt);
+      animarRosto(n, dt, agora);
+      if (!u.caido) olhar(n, dt, V);
+      ajustarAreaClique(n);
+      moverNPC(n, dt);
+      camera.getWorldPosition(V);
+      if (u.caido || !n.visible) continue;
+      const encarar = u.ameaca || (u.real && !u.destino && !u.semVirar && !u.rota?.length && V.distanceTo(n.position) < 3.2);
+      if (encarar) { let d = Math.atan2(V.x - n.position.x, V.z - n.position.z) - n.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); n.rotation.y += d * Math.min(1, dt * (A?.ameaca ? 6 : 2.5)); }
+      else if (u.fig && !u.fala && !u.destino && !u.rota?.length) { let d = u.giroBase - n.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); n.rotation.y += d * Math.min(1, dt * 1.2); }
+    }
+    seguirArmaNPC();
+    if (S.ativo && Math.floor(agora / 1000) !== Math.floor((agora - dt * 1000) / 1000)) status();
+  }
+
+  /* ================= entradas ================= */
+  addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.repeat) return;
+    if (e.code === 'KeyT') abrirMenu();
+    if (e.code === 'KeyK' && S.ativo) abrirChecklist();
+    if (e.code === 'KeyQ' && !e.shiftKey) sacar(!S.armaNaMao);
+    if (e.code === 'KeyR') recarregar();
+  });
+  const bt = document.createElement('button'); bt.type = 'button'; bt.textContent = 'Iniciar treinamento'; bt.id = 'bTrein';
+  bt.onclick = aviso; document.getElementById('acoes')?.prepend(bt);
+
+  window.__trein = {
+    clique: ray => usar(ray), gatilho: (ray, c) => usar(ray, c), botao, recarregar, soltar,
+    apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
+    menu: abrirMenu, quadro, estado: S, relatorio,
+    _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,
+      decidirFinal, finalizar, reagir, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
+      ocorrencia: () => A, historico: HIST, botoes: () => (dialogo.mesh.visible ? dialogo : menu).botoes, painel: () => (dialogo.mesh.visible ? dialogo : menu.mesh.visible ? menu : null) }
+  };
+  return window.__trein;
+}

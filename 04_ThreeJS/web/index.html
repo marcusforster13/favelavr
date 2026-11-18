@@ -31,7 +31,15 @@
   button{font:600 12px/1 var(--sans);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:3px;padding:8px 10px;cursor:pointer}
   button:hover,button.on{border-color:var(--amber)} button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   .count{margin:0;font:500 12px/1 var(--mono)} .help{margin:0;padding-top:8px;border-top:1px solid var(--line);color:var(--mute)}
-  #hud.min > :not(.eyebrow):not(#acoes){display:none} #hud.min #acoes button:not(#bMin){display:none}
+  #hud.min > :not(.eyebrow):not(#acoes){display:none} #hud.min #acoes button:not(#bMin):not(#bTrein){display:none}
+  #statusTrein{position:fixed;right:16px;top:16px;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px 14px;font:500 12px/1.6 var(--mono);z-index:5;max-width:calc(100% - 32px)}
+  #statusTrein b{color:var(--amber)}
+  #legendaHTML{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:min(900px,calc(100% - 32px));background:rgba(5,7,12,.88);border:1px solid var(--line);border-radius:6px;padding:12px 18px;font-size:17px;line-height:1.45;z-index:6}
+  #legendaHTML b{color:var(--amber)}
+  #relatorioHTML{position:fixed;inset:4% max(16px,8%);overflow:auto;background:rgba(11,14,22,.97);border:1px solid var(--line);border-radius:6px;padding:20px 26px;z-index:20;font-size:14px;line-height:1.5}
+  #relatorioHTML h2{margin:0 0 6px;color:var(--amber)} #relatorioHTML h3{margin:16px 0 4px;font-size:15px}
+  #relatorioHTML h3 small{color:var(--mute);font:500 12px var(--mono)} #relatorioHTML ul{margin:0;padding-left:18px}
+  #relatorioHTML li.ok{color:#9fd49a} #relatorioHTML li.nao{color:var(--mute)} #relatorioHTML em{color:var(--mute)}
 </style>
 </head>
 <body>
@@ -47,13 +55,18 @@
     <dt>Arrastar</dt><dd>olhar ao redor</dd>
     <dt>W A S D</dt><dd>andar · Shift corre · setas giram</dd>
     <dt>N · V</dt><dd>colisão liga/desliga · voar (sem gravidade)</dd>
-    <dt>VR</dt><dd>analógico esquerdo anda, direito gira · gatilho direito teleporta</dd>
+    <dt>Clique</dt><dd>falar · usar · escolher nos painéis</dd>
+    <dt>T · K · Q · R</dt><dd>menu · checklist · sacar/guardar a arma (clique dispara) · recarregar</dd>
+    <dt>VR</dt><dd>analógico esquerdo anda, direito gira · gatilho usa ou teleporta · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · Y ou B abre o menu</dd>
   </dl>
   <label>Brilho <input id="exp" type="range" min="0.5" max="1.6" step="0.02" value="1"></label>
   <div class="row" id="acoes"><button id="bMin" type="button">Recolher</button></div>
   <p class="count" id="setoresInfo"></p>
-  <p class="help">Cenário modelado e com luz pré-calculada no Blender (Cycles). Árvores como imagem para caber no Quest. Situação fictícia.</p>
+  <p class="help"><b>Conteúdo sensível:</b> confronto armado com disparos e sangue em adultos. Situação fictícia. Personagens: Microsoft Rocketbox (MIT).<br>Cenário modelado e com luz pré-calculada no Blender (Cycles). Árvores como imagem para caber no Quest. Situação fictícia.</p>
 </aside>
+<div id="statusTrein" hidden></div>
+<div id="legendaHTML" hidden></div>
+<div id="relatorioHTML" hidden></div>
 
 <script type="importmap">
 {"imports":{
@@ -74,7 +87,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = id => document.getElementById(id);
-const VERSAO = '1118-1530';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+const VERSAO = '1118-1606';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
 window.__versao = VERSAO; window.__arq = {};
 const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
 $('versao').textContent = 'versão ' + VERSAO;
@@ -108,6 +121,9 @@ scene.fog = new THREE.Fog(CEU, 250, 1400);       // so o mar e o morro distante 
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 2000);
 camera.position.set(0, 1.6, 0);
 const rig = new THREE.Group(); rig.add(camera); scene.add(rig);
+// o cenario e assado (material sem luz); esta luz so ilumina personagens e armas: ceu + sol na direcao do sol do bake
+scene.add(new THREE.HemisphereLight(0xcdd9ea, 0x8a7d6a, 1.25));
+const sol = new THREE.DirectionalLight(0xfff1dc, 1.7); sol.position.set(-0.613, 0.79, -0.007).multiplyScalar(50); scene.add(sol);
 
 /* ceu: degradê simples (cinza-azulado no horizonte, azul em cima), como no render do Blender */
 const ceu = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), new THREE.ShaderMaterial({
@@ -370,9 +386,12 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys.delete(e.code));
 const el = renderer.domElement;
-el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); });
-el.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; yaw += dx * .004; pitch = Math.max(-1.4, Math.min(1.4, pitch + dy * .004)); });
-el.addEventListener('pointerup', () => { drag = null; });
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, m: 0 }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.m += Math.abs(dx) + Math.abs(dy); yaw += dx * .004; pitch = Math.max(-1.4, Math.min(1.4, pitch + dy * .004)); });
+el.addEventListener('pointerup', e => {
+  if (drag && drag.m < 6) { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera); window.__som?.desbloquear?.(); window.__trein?.clique(r); }
+  drag = null;
+});
 function desktopMove(dt) {
   let f = 0, s = 0, u = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) f++; if (keys.has('KeyS') || keys.has('ArrowDown')) f--;
@@ -389,20 +408,29 @@ const ray = new THREE.Raycaster(); ray.firstHitOnly = true;
 const reticulo = new THREE.Mesh(new THREE.RingGeometry(.18, .24, 32).rotateX(-Math.PI / 2),
   new THREE.MeshBasicMaterial({ color: 0xf0a340, transparent: true, opacity: .8, depthWrite: false, fog: false }));
 reticulo.visible = false; scene.add(reticulo);
-const cmf = new XRControllerModelFactory(), tmpM = new THREE.Matrix4(), controles = [];
+const cmf = new XRControllerModelFactory(), tmpM = new THREE.Matrix4(), controles = [], grips = [];
 for (const i of [0, 1]) {
   const c = renderer.xr.getController(i);
   const linha = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0xf0a340 }));
   linha.scale.z = 6; c.add(linha);
   c.addEventListener('connected', e => { c.userData.mao = e.data.handedness; });
   c.addEventListener('selectstart', () => {
+    window.__som?.desbloquear?.();
+    tmpM.identity().extractRotation(c.matrixWorld); ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+    if (window.__trein?.gatilho(ray, c)) return;
+    if (window.__trein?.painelAberto()) return;
     if (c.userData.mao === 'left') return;
     const p = alvoTeleporte(c);
     if (p) { camera.getWorldPosition(V1); rig.position.x += p.x - V1.x; rig.position.z += p.z - V1.z; rig.position.y = p.y; }
   });
-  rig.add(c); controles.push(c);
-  const grip = renderer.xr.getControllerGrip(i); grip.add(cmf.createControllerModel(grip)); rig.add(grip);
+  c.addEventListener('selectend', () => window.__trein?.soltar?.(c));
+  c.userData.linha = linha; rig.add(c); controles.push(c);
+  const grip = renderer.xr.getControllerGrip(i); grip.add(cmf.createControllerModel(grip)); rig.add(grip); grips.push(grip);
+  grip.addEventListener('connected', e => { grip.userData.mao = e.data.handedness; });
 }
+const raiosVR = [new THREE.Raycaster(), new THREE.Raycaster()];
+const mirarEm = (r, c) => { tmpM.identity().extractRotation(c.matrixWorld); r.ray.origin.setFromMatrixPosition(c.matrixWorld); r.ray.direction.set(0, 0, -1).applyMatrix4(tmpM); return r; };
+const botoesAntes = {};
 function alvoTeleporte(c) {
   tmpM.identity().extractRotation(c.matrixWorld); ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
   const h = ray.intersectObjects(alvosCol, false)[0];
@@ -416,6 +444,10 @@ function vrMove(dt) {
   let andou = false;
   for (const src of s.inputSources) {
     const gp = src.gamepad; if (!gp) continue;
+    // Y (esquerdo) ou B (direito) = menu; A = saca ou guarda a arma; apertar o analogico direito = recarregar
+    const yb = !!gp.buttons[5]?.pressed, k1 = 'yb_' + src.handedness; if (yb && !botoesAntes[k1]) window.__trein?.menu(); botoesAntes[k1] = yb;
+    const ax = !!gp.buttons[4]?.pressed, k2 = 'ax_' + src.handedness; if (ax && !botoesAntes[k2]) window.__trein?.botao?.(src.handedness); botoesAntes[k2] = ax;
+    const an = src.handedness === 'right' && !!gp.buttons[3]?.pressed; if (an && !botoesAntes.an) window.__trein?.recarregar?.(); if (src.handedness === 'right') botoesAntes.an = an;
     const x = gp.axes[2] ?? gp.axes[0] ?? 0, y = gp.axes[3] ?? gp.axes[1] ?? 0;
     if (src.handedness === 'left' && Math.hypot(x, y) > .15) {
       camera.getWorldDirection(V2); V2.y = 0; V2.normalize();
@@ -427,7 +459,10 @@ function vrMove(dt) {
     }
   }
   if (!andou && colisaoAtiva) seguirChao(dt);
-  const p = controles[1] && alvoTeleporte(controles[1]);
+  // raio de cada controle nos paineis do treinamento: realca o botao e encurta a linha ate o painel
+  const hs = window.__trein?.apontar ? window.__trein.apontar(controles.map((c, i) => mirarEm(raiosVR[i], c))) : [];
+  controles.forEach((c, i) => { if (c.userData.linha) c.userData.linha.scale.z = hs[i] ? hs[i].distance : 6; });
+  const p = !window.__trein?.painelAberto?.() && controles[1] && alvoTeleporte(controles[1]);
   reticulo.visible = !!p; if (p) reticulo.position.copy(p).y += .02;
 }
 renderer.xr.addEventListener('sessionend', () => { camera.position.set(0, 1.6, 0); reticulo.visible = false; });
@@ -445,8 +480,28 @@ renderer.setAnimationLoop(() => {
   else { desktopMove(dt); rig.rotation.y = yaw; camera.rotation.set(pitch, 0, 0); }
   camera.getWorldPosition(V1); ceu.position.copy(V1);
   mar.material.uniforms.uTempo.value = clock.elapsedTime;
+  window.__trein?.quadro(); window.__som?.quadro(dt);
   renderer.render(scene, camera);
 });
+
+/* altura do chao em (x, z), procurando de yRef+1,2 m para baixo (para personagens e objetos); null se nao achar */
+const rayH = new THREE.Raycaster(); rayH.firstHitOnly = true; const _pH = new THREE.Vector3(), _bH = new THREE.Box3();
+function alturaChao(x, z, yRef = 60, acima = 1.2) {
+  _bH.min.set(x - .1, -100, z - .1); _bH.max.set(x + .1, 200, z + .1);
+  const perto = malhas.filter(o => o.userData.caixa.intersectsBox(_bH));
+  rayH.set(_pH.set(x, yRef + acima, z), BAIXO); rayH.far = acima + 8;
+  const h = rayH.intersectObjects(perto, false)[0]; return h ? h.point.y : null;
+}
+window.__favela.alturaChao = alturaChao;
+
+/* ---------- sons e motor do treinamento ---------- */
+import('./' + H('audio.js')).then(m => m.iniciarAudio({ scene, camera, renderer })).catch(e => console.warn('Áudio não carregou:', e));
+const iluminar = m => { if (m.metalness > .25) m.metalness = .25; m.envMapIntensity = 0; return m; };
+import('./' + H('treinamento.js')).then(m => m.iniciar({
+  scene, camera, rig, renderer, controles, grips, iluminar, alturaChao, pousar, loaderGLB: loader,
+  colisao: () => alvosCol, malhas: () => malhas,
+  setYaw: y => { yaw = y; pitch = 0; }, setLanterna: () => { }, lanternaLigada: () => false
+})).catch(e => console.error('Treinamento não carregou:', e));
 </script>
 </body>
 </html>

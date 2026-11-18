@@ -1,0 +1,194 @@
+{
+ "pm_parceiro": {
+  "arquivo": "personagens/pm_parceiro.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "andando",
+   "correndo",
+   "apontando"
+  ],
+  "origem": "ciep:pm_parceiro"
+ },
+ "pm_apoio": {
+  "arquivo": "personagens/pm_apoio.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "andando",
+   "correndo"
+  ],
+  "origem": "ciep:pm_apoio"
+ },
+ "vigia": {
+  "arquivo": "personagens/vigia.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "irritado",
+   "apontando"
+  ],
+  "origem": "cassino:seguranca"
+ },
+ "vendedor": {
+  "arquivo": "personagens/vendedor.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "apontando"
+  ],
+  "origem": "cassino:seguranca_2"
+ },
+ "dono_bar": {
+  "arquivo": "personagens/dono_bar.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando"
+  ],
+  "origem": "busca:porteiro"
+ },
+ "frequentador_a": {
+  "arquivo": "personagens/frequentador_a.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "sentado_jogando"
+  ],
+  "origem": "cassino:apostador_a"
+ },
+ "frequentador_b": {
+  "arquivo": "personagens/frequentador_b.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "sentado_jogando"
+  ],
+  "origem": "cassino:apostador_c"
+ },
+ "morador": {
+  "arquivo": "personagens/morador.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "sentado_parado",
+   "sentado_apontando",
+   "apontando"
+  ],
+  "origem": "cassino:atirador"
+ },
+ "mulher": {
+  "arquivo": "personagens/mulher.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "sentado_parado"
+  ],
+  "origem": "busca:mulher"
+ },
+ "crianca": {
+  "arquivo": "personagens/crianca.glb",
+  "animacoes": [
+   "parada",
+   "nervoso",
+   "agachado",
+   "andando",
+   "correndo",
+   "rendido",
+   "fut_parado",
+   "fut_trote",
+   "fut_passe",
+   "fut_chute",
+   "fut_receber",
+   "fut_dominar",
+   "gol_parado",
+   "gol_pega",
+   "gol_repoe"
+  ],
+  "origem": "ciep:refem_menino_a"
+ },
+ "dono_oficina": {
+  "arquivo": "personagens/dono_oficina.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando",
+   "irritado"
+  ],
+  "origem": "cassino:responsavel"
+ },
+ "olheiro": {
+  "arquivo": "personagens/olheiro.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando"
+  ],
+  "origem": "cassino:apostador_b"
+ },
+ "senhora": {
+  "arquivo": "personagens/senhora.glb",
+  "animacoes": [
+   "parada",
+   "falando",
+   "nervoso",
+   "andando",
+   "correndo",
+   "rendido",
+   "algemado",
+   "algemado_andando"
+  ],
+  "origem": "busca:vizinha"
+ }
+}
