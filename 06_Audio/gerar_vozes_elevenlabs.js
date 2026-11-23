@@ -48,6 +48,7 @@ function falasDoCenario() {
   add('vigia', 'Tá bom, tá bom, perdi!', 'Rende após a ordem de parar');
   add('radio', 'Ciente, atirador. Equipe aguardando sua liberação.', 'Rádio: sniper relato');
   add('radio', 'Ameaça contida. Equipe no controle da praça.', 'Rádio: sniper contido');
+  add('radio', 'Ciente, atirador. Sem mais disparos contra a laje.', 'Rádio: sniper atiradores');
   add('morador', 'O armário é no quarto do casal.', 'Residência');
   return lista;
 }

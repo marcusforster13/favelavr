@@ -322,6 +322,13 @@
           "pontos": 14,
           "base": "CP art. 23 · Lei 13.060/2014",
           "condicao": "variacao.missao == 'sniper' && (variacao.sniper_cena == 'ninguem' || variacao.sniper_cena == 'rende')"
+        },
+        {
+          "id": "neutralizar_atiradores",
+          "texto": "Localizou e neutralizou os atiradores que atacavam a laje (lajes e becos)",
+          "pontos": 10,
+          "base": "CP art. 25 (legítima defesa própria)",
+          "condicao": "variacao.missao == 'sniper'"
         }
       ],
       "erros": [
@@ -456,7 +463,8 @@
     "final": "Ciente, guarnição. Conduzam à delegacia. Encerrando.",
     "sniper_inicio": "Atirador, aqui é a central. Você está na laje, de cobertura para a equipe que vai entrar no bar da praça. Observe pela luneta e informe o que vê antes da entrada.",
     "sniper_entrada": "Equipe entrando na praça agora.",
-    "sniper_atingido": "Policial atingido! Policial atingido na praça!"
+    "sniper_atingido": "Policial atingido! Policial atingido na praça!",
+    "sniper_ataque": "Atirador, tiros contra a sua posição! Abrigue-se e localize de onde vêm."
   },
   "denuncias": {
     "deposito": "estão guardando droga no térreo da casa de esquina da escadaria grande, lá no alto.",
@@ -915,6 +923,12 @@
         "texto": "Policial atingido! Policial atingido na praça!"
       },
       {
+        "arquivo": "fala_radio_18",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper_ataque",
+        "texto": "Atirador, tiros contra a sua posição! Abrigue-se e localize de onde vêm."
+      },
+      {
         "arquivo": "fala_radio_11",
         "personagem": "Sala de operações (rádio)",
         "quando": "Rádio: olheiro",
@@ -1081,6 +1095,12 @@
         "personagem": "Sala de operações (rádio)",
         "quando": "Rádio: sniper contido",
         "texto": "Ameaça contida. Equipe no controle da praça."
+      },
+      {
+        "arquivo": "fala_radio_19",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper atiradores",
+        "texto": "Ciente, atirador. Sem mais disparos contra a laje."
       },
       {
         "arquivo": "fala_morador_05",

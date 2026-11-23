@@ -753,7 +753,7 @@ export async function iniciar(ctx) {
     const g = n.userData.arma; if (!g) return;
     somTiro(); if (g.userData.flash) acenderFlash(g.userData.flash); capsula(g);
     const de = g.position.clone(); camera.getWorldPosition(GT); const alvo = GT.clone();
-    if (visto(de, alvo) && Math.random() < .3) return policialAtingido();
+    if (visto(de, alvo) && Math.random() < (de.distanceTo(alvo) > 20 ? .1 : .3)) return policialAtingido();
     GV.copy(alvo).sub(de).normalize(); GV.x += (Math.random() - .5) * .3; GV.y += (Math.random() - .5) * .25; GV.z += (Math.random() - .5) * .3;
     rayG.set(de, GV.normalize()); rayG.far = 30; const h = rayG.intersectObjects(ctx.colisao(), false)[0]; if (h?.face) marcar(h);
   }
@@ -1071,7 +1071,8 @@ export async function iniciar(ctx) {
     frequentador_b: ['frequentador_b', 'Frequentadora', 'f', 1.68], morador: ['morador', 'Morador', 'm', 1.8],
     mulher: ['mulher', 'Mulher do morador', 'f', 1.66], filho: ['crianca', 'Criança', 'c', 1.3],
     dono_oficina: ['dono_oficina', 'Dono da oficina', 'm', 1.78],
-    olheiro: ['olheiro', 'Rapaz na laje', 'm', 1.75], comparsa: ['vigia', 'Homem armado', 'm', 1.8], moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
+    olheiro: ['olheiro', 'Rapaz na laje', 'm', 1.75], comparsa: ['vigia', 'Homem armado', 'm', 1.8],
+    atirador_1: ['morador', 'Atirador', 'm', 1.8], atirador_2: ['vigia', 'Atirador', 'm', 1.8], atirador_3: ['vendedor', 'Atirador', 'm', 1.8], moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
   };
   const SUSPEITO = { deposito: 'vigia', bar: 'vendedor', oficina: 'dono_oficina', residencia: 'morador', sniper: 'vendedor' };
   function limparNPCs() { Object.values(npcs).forEach(n => scene.remove(n)); for (const k in npcs) delete npcs[k]; }
@@ -1084,7 +1085,7 @@ export async function iniciar(ctx) {
     return n;
   }
   function papeisDaMissao(v) {
-    if (v.missao === 'sniper') return ['parceiro', 'apoio', 'vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b', ...(v.sniper_cena === 'dois' ? ['comparsa'] : [])];
+    if (v.missao === 'sniper') return ['parceiro', 'apoio', 'vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b', 'atirador_1', 'atirador_2', 'atirador_3', ...(v.sniper_cena === 'dois' ? ['comparsa'] : [])];
     const L = ['parceiro', 'apoio', v.evento === 'crianca' ? 'crianca_rua' : v.evento];
     if (v.missao === 'deposito') L.push('vigia');
     if (v.missao === 'bar') L.push('vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b');
@@ -1386,7 +1387,39 @@ export async function iniciar(ctx) {
     if (!malhasPraca) malhasPraca = ctx.malhas().filter(o => o.userData.caixa?.intersectsBox(caixaPraca));
     return [...colisaoBase(), ...malhasPraca];
   };
+  /* atiradores contra a laje: 3 pontos sorteados entre lajes e becos com visada da laje (medidos no cenario) */
+  const PONTOS_ATIRADOR = {
+    laje: [[-36, 32.5, -20], [-24, 32.5, -20], [-64, 18.5, -12], [-6, 20.8, -8], [-70, 12.1, 8], [-4, 12.1, 24]],
+    beco: [[-60, 7, 24], [-36, 5.3, 30], [-24, 5.3, 34], [-10, 5, 34]]
+  };
+  const armasAtacantes = [0, 1, 2].map(() => {
+    const g = new THREE.Group(); g.visible = false; g.userData.fuzil = true; scene.add(g);
+    const fl = criarFlash(.28); fl.position.set(0, 0, -.71); g.add(fl); g.userData.flash = fl; return g;
+  });
+  gl.loadAsync(HQ('modelos/fuzil.glb')).then(gg => { for (const g of armasAtacantes) { const m = prep(gg.scene.clone()); m.userData.tipo = 'fuzil'; g.add(m); } }).catch(() => { });
+  const atacantes = () => Object.values(npcs).filter(n => n.userData.atacante);
+  const ameacaPraca = () => ameacando().filter(n => !n.userData.atacante);
+  function criarAtacantes() {
+    const emb = a => [...a].sort(() => Math.random() - .5);
+    const pts = [emb(PONTOS_ATIRADOR.laje)[0], emb(PONTOS_ATIRADOR.beco)[0], emb([...PONTOS_ATIRADOR.laje, ...PONTOS_ATIRADOR.beco])[0]];
+    if (pts[2] === pts[0] || pts[2] === pts[1]) pts[2] = PONTOS_ATIRADOR.laje.find(p => p !== pts[0]);
+    pts.forEach(([x, y, z], i) => {
+      const n = novoNPC('atirador_' + (i + 1), x, y, z, olharPara(-35 - x, 7 - z));
+      Object.assign(n.userData, { atacante: true, arma: armasAtacantes[i], semVirar: false }); n.visible = false;
+    });
+  }
+  function ataqueLaje() {
+    atacantes().forEach((n, i) => setTimeout(() => {
+      if (!A || A.fase === 'fim' || n.userData.caido) return;
+      const u = n.userData; n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.proxTiro = performance.now() + 1800;
+      u.base = 'apontando'; animar(n, u.acoes?.apontando ? 'apontando' : 'nervoso', 1e6, .2);
+      if (i === 0) { radio(CEN.radio.sniper_ataque); dica('Tiros de lajes e becos! Abaixe atrás da mureta, ache o atirador pela luneta e reaja.', 7); }
+      sincAmeaca(); status();
+    }, 7000 + i * 4500));
+  }
+
   function criarSniper(v) {
+    criarAtacantes();
     // equipe esperando no pe da escada da praca
     for (const [k, x, z] of [['parceiro', 4.2, 21.6], ['apoio', 3.4, 22.4]]) { const n = novoNPC(k, x, 9, z, olharPara(1, -1)); n.userData.equipe = true; }
     const vd = novoNPC('vendedor', 11.2, 9.5, 15.0, olharPara(0, 1)); vd.userData.arma = armaNPC2;
@@ -1416,7 +1449,7 @@ export async function iniciar(ctx) {
   }
   function entradaEquipe() {
     if (!A || A.equipeEntrou) return; A.equipeEntrou = true; clearTimeout(A.tEntrada);
-    radio(CEN.radio.sniper_entrada);
+    radio(CEN.radio.sniper_entrada); ataqueLaje();
     const dest = { parceiro: [[5.6, 18.6], [8.6, 17.4]], apoio: [[5.0, 19.2], [9.8, 16.9]] };
     let chegaram = 0;
     for (const k of ['parceiro', 'apoio']) { const n = npcs[k]; if (!n) continue; n.userData.base = 'parada'; rota(n, dest[k], 1.9, 'andando', () => { n.userData.base = 'apontando'; animar(n, n.userData.acoes?.apontando ? 'apontando' : 'parada', 1e6, .2); if (++chegaram === 2) reacaoPraca(); }); }
@@ -1437,26 +1470,28 @@ export async function iniciar(ctx) {
     }
     diz(npcs.comparsa || n, F('comparsa_atira') || F('vendedor_atira'), null); sincAmeaca(); status();
     A.tEquipe = setTimeout(() => {
-      if (!A || !ameacando().length) return;
-      const p = npcs.parceiro, atirador = ameacando()[0]; somTiro(); if (atirador.userData.arma?.userData.flash) acenderFlash(atirador.userData.arma.userData.flash);
+      if (!A || !ameacaPraca().length) return;
+      const p = npcs.parceiro, atirador = ameacaPraca()[0]; somTiro(); if (atirador.userData.arma?.userData.flash) acenderFlash(atirador.userData.arma.userData.flash);
       registrar('equipe_atingida'); radio(CEN.radio.sniper_atingido);
       p.userData.caido = true; cair(p); A.ferido = p; S.variacao.ferido = 'sim';
-      setTimeout(() => { for (const a of ameacando()) renderNPC(a, true); }, 1800);      // o apoio contem os armados
+      setTimeout(() => { for (const a of ameacaPraca()) renderNPC(a, true); }, 1800);      // o apoio contem os armados
       status();
     }, 6500);
   }
   function sniperQuadro() {
-    if (A.tEquipe && A.equipeEntrou && !ameacando().length && !A.contido) {          // ameaca neutralizada: equipe avanca e prende
+    if (A.tEquipe && A.equipeEntrou && !ameacaPraca().length && !A.contido) {          // ameaca neutralizada: equipe avanca e prende
       A.contido = true; clearTimeout(A.tEquipe);
       setTimeout(() => radio('Ameaça contida. Equipe no controle da praça.'), 800);
     }
     if (S.variacao.sniper_cena === 'refem' && npcs.vendedor?.userData.ameaca) A.refemVisto = true;
+    const at = atacantes(); if (at.length && !A.atiradoresOk && at.every(n => n.userData.caido || n.userData.rendido)) { A.atiradoresOk = true; registrar('neutralizar_atiradores'); radio('Ciente, atirador. Sem mais disparos contra a laje.'); }
   }
   function avaliarSniper() {
     const v = S.variacao, ruins = S.graves.some(g => /disparo_injustificado|tiro_com_civis/.test(g.id));
-    const disparou = S.log.some(l => /resposta_proporcional|disparo_/.test(l.id));
-    if ((v.sniper_cena === 'refem' || v.sniper_cena === 'dois') && !ruins && Object.values(npcs).filter(n => n.userData.arma && n.userData.chave !== 'parceiro').every(n => n.userData.caido || n.userData.rendido) && !S.erros.some(e => e.id === 'equipe_atingida')) registrar('tiro_preciso');
-    if ((v.sniper_cena === 'ninguem' || v.sniper_cena === 'rende') && !disparou) registrar('conter_sem_disparo');
+    const praca = Object.values(npcs).filter(n => !n.userData.atacante && !n.userData.equipe);
+    const tiroNaPraca = praca.some(n => n.userData.caido);
+    if ((v.sniper_cena === 'refem' || v.sniper_cena === 'dois') && !ruins && praca.filter(n => n.userData.arma).every(n => n.userData.caido || n.userData.rendido) && !S.erros.some(e => e.id === 'equipe_atingida')) registrar('tiro_preciso');
+    if ((v.sniper_cena === 'ninguem' || v.sniper_cena === 'rende') && !tiroNaPraca && !ruins) registrar('conter_sem_disparo');
   }
 
   /* ================= encerramento ================= */
@@ -1712,7 +1747,8 @@ export async function iniciar(ctx) {
     if (v.missao === 'sniper') {
       if (!A.relatou) L.push('Observe a praça pela luneta e informe pelo rádio o que vê (menu)');
       else if (!A.equipeEntrou) L.push('Libere a entrada da equipe pelo rádio (menu)');
-      else if (ameacando().length) L.push('Ameaça contra a equipe: dispare só no armado, sem civil na linha');
+      else if (ameacaPraca().length) L.push('Ameaça contra a equipe: dispare só no armado, sem civil na linha');
+      if (atacantes().some(n => n.visible && n.userData.ameaca && !n.userData.caido)) L.push('Tiros contra a laje: abaixe atrás da mureta e ache os atiradores (lajes e becos)');
       if (A.ferido && !A.socorro) L.push('Peça socorro pelo rádio (menu)');
       if (A.equipeEntrou && !ameacando().length && !A.decidiu) L.push('Encerre pelo rádio: enquadramento (menu)');
       return L.slice(0, 6);
@@ -1812,7 +1848,7 @@ export async function iniciar(ctx) {
     apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
     menu: abrirMenu, quadro, estado: S, relatorio, trocarArma, mirar,
     _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,
-      decidirFinal, finalizar, reagir, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
+      decidirFinal, finalizar, reagir, atacantes, ataqueLaje, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
       ocorrencia: () => A, historico: HIST, botoes: () => (dialogo.mesh.visible ? dialogo : menu).botoes, painel: () => (dialogo.mesh.visible ? dialogo : menu.mesh.visible ? menu : null) }
   };
   return window.__trein;

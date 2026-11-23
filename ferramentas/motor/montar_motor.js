@@ -42,6 +42,8 @@ B = rep(B, `somTiro(); acenderFlash(clarao); capsula(arma); status(); const rx =
     setTimeout(() => { arma.rotation.x = rx; }, 130);`, `somTiro(); acenderFlash(clarao); capsula(arma); status(); recuo(ray);`);
 // a arma do NPC mira o alvo dele (refem, equipe) quando houver; senao, o policial
 B = rep(B, `mao.getWorldPosition(g.position); camera.getWorldPosition(GT);`, `mao.getWorldPosition(g.position); if (n.userData.alvoMira) GT.copy(n.userData.alvoMira); else camera.getWorldPosition(GT);`);
+// chance de acerto do bandido cai com a distancia (atiradores contra a laje do sniper)
+B = rep(B, `if (visto(de, alvo) && Math.random() < .3) return policialAtingido();`, `if (visto(de, alvo) && Math.random() < (de.distanceTo(alvo) > 20 ? .1 : .3)) return policialAtingido();`);
 // quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
 B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);
