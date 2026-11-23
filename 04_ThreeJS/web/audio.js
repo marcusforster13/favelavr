@@ -58,7 +58,17 @@ export async function iniciarAudio({ scene, camera, renderer }) {
   const curtos = todos.filter(([n]) => DEF[n]?.tipo === 'evento');
   await Promise.all(curtos.map(carregar));
   pronto = true; if (gesto) ligar();
-  for (const x of todos.filter(x => !curtos.includes(x))) carregar(x).then(() => { if (gesto) ligar(); });      // cada ambiente entra quando chega
+  // ambientes entram quando chegam; as falas gravadas (dezenas de arquivos) NAO carregam na abertura: decodificar e medir
+  // todas de uma vez travava o Quest. O treinamento pede quando comeca (api.carregarFalas), uma de cada vez.
+  for (const x of todos.filter(x => !curtos.includes(x) && !x[0].startsWith('fala_'))) carregar(x).then(() => { if (gesto) ligar(); });
+  const falasPendentes = todos.filter(x => x[0].startsWith('fala_'));
+  let carregandoFalas = null;
+  function carregarFalas(primeiro = []) {
+    if (carregandoFalas) return carregandoFalas;
+    const fila = [...falasPendentes].sort((a, b) => (primeiro.some(p => a[0].startsWith(p)) ? 0 : 1) - (primeiro.some(p => b[0].startsWith(p)) ? 0 : 1));
+    carregandoFalas = (async () => { for (const x of fila) { if (!buffers[x[0]]) await carregar(x); await new Promise(r => setTimeout(r, 30)); } })();
+    return carregandoFalas;
+  }
 
   // normaliza cada arquivo para ~-20 dB RMS sem passar de 0,95 de pico (arquivos baixos ficam audiveis)
   // falas gravadas: descobre onde a voz comeca e termina, para tocar sem os silencios das pontas
@@ -107,7 +117,7 @@ export async function iniciarAudio({ scene, camera, renderer }) {
     if (primeira) agendarEsporadicos();
   }
   function posicional(n, d) {
-    const a = new THREE.PositionalAudio(listener); a.setBuffer(buffers[n]); a.setLoop(true);
+    const a = new THREE.PositionalAudio(listener); a.panner.panningModel = 'equalpower'; a.setBuffer(buffers[n]); a.setLoop(true);
     a.setRefDistance(d.ref); a.setRolloffFactor(d.rolloff); a.setDistanceModel('exponential'); a.setVolume(mudo ? 0 : vol(n, d.vol));
     const o = new THREE.Object3D(); o.position.fromArray(d.pos); o.add(a); scene.add(o); a.play();
     posicionais.push({ n, a, o, d, k: 1 });
@@ -122,7 +132,7 @@ export async function iniciarAudio({ scene, camera, renderer }) {
       if (d.tipo !== 'esporadico' || !buffers[n]) continue;
       const tocar = () => {
         if (!mudo) {
-          const a = new THREE.PositionalAudio(listener); a.setBuffer(buffers[n]); a.setRefDistance(8); a.setVolume(vol(n, d.vol));
+          const a = new THREE.PositionalAudio(listener); a.panner.panningModel = 'equalpower'; a.setBuffer(buffers[n]); a.setRefDistance(8); a.setVolume(vol(n, d.vol));
           const o = new THREE.Object3D();
           o.position.set(THREE.MathUtils.randFloat(...d.area[0]), 1, THREE.MathUtils.randFloat(...d.area[1]));
           o.add(a); scene.add(o); a.play(); a.onEnded = () => { a.isPlaying = false; scene.remove(o); };
@@ -165,7 +175,7 @@ export async function iniciarAudio({ scene, camera, renderer }) {
       if (mudo) return true;
       let a;
       if (pos) {
-        a = new THREE.PositionalAudio(listener); a.setBuffer(buffers[n]); a.setRefDistance(n.startsWith('fala_') ? 2.2 : 1.2); a.setVolume(vol(n, d.vol));
+        a = new THREE.PositionalAudio(listener); a.panner.panningModel = 'equalpower'; a.setBuffer(buffers[n]); a.setRefDistance(n.startsWith('fala_') ? 2.2 : 1.2); a.setVolume(vol(n, d.vol));
         const o = new THREE.Object3D(); o.position.copy(pos); o.add(a); scene.add(o); recorte(a, d, vol(n, d.vol)); a.play();
         a.onEnded = () => { a.isPlaying = false; scene.remove(o); };
       } else {
@@ -188,6 +198,7 @@ export async function iniciarAudio({ scene, camera, renderer }) {
       ambientes: ambientes.map(({ a }) => ({ tocando: a.isPlaying, volume: +a.getVolume().toFixed(2) })),
       posicionais: posicionais.map(({ n, a }) => ({ n, tocando: a.isPlaying })) })
   };
+  api.carregarFalas = carregarFalas;
   window.__som = api;
   return api;
 }

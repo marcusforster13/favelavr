@@ -498,7 +498,10 @@
     if (!A) return;
     HIST.push(resumo()); A = null;
     if (!S.ativo) return;
-    if (S.fila.length) { const prox = S.fila.shift(); setTimeout(() => novaOcorrencia(derivar({ ...sortear(), ...prox.variacao }), S.historia ? prox : null), 1200); }
+    if (S.fila.length) {
+      const prox = S.fila.shift(), v = derivar({ ...sortear(), ...prox.variacao }), papeis = papeisDaMissao(v).map(k => PAPEL[k][0]);
+      carregarPapeis(papeis).then(() => aquecer(papeis)).then(() => setTimeout(() => novaOcorrencia(v, S.historia ? prox : null), 400));
+    }
     else encerrar();
   }
 
@@ -520,12 +523,31 @@
       ]
     });
   }
+  /* prepara materiais e texturas dos personagens e armas ANTES de aparecerem (no Quest o primeiro quadro com eles
+     travava ~0,4 s: compilar os shaders e enviar as texturas para a placa de video). Roda atras da tela de carregamento. */
+  async function aquecer(papeis) {
+    const tmp = new THREE.Group(); camera.getWorldPosition(V); camera.getWorldDirection(V2); tmp.position.copy(V).addScaledVector(V2, 3);
+    for (const p of new Set(papeis)) {
+      const b = modelos[p]; if (!b) continue;
+      const c = SkeletonUtils.clone(b.scene);
+      c.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.material = Array.isArray(o.material) ? o.material.map(m => ctx.iluminar(m.clone())) : ctx.iluminar(o.material.clone()); } });
+      tmp.add(c);
+    }
+    for (const grp of [...ARMAS_NPC, armaCasa]) for (const c of grp.children) if (c.userData.tipo) { const k = c.clone(); k.visible = true; k.traverse(o => { o.visible = true; o.frustumCulled = false; }); tmp.add(k); }
+    tmp.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap']) if (m[k]) renderer.initTexture(m[k]); });
+    scene.add(tmp);
+    try { if (renderer.compileAsync) await renderer.compileAsync(scene, camera); else renderer.compile(scene, camera); } catch (e) { }
+    renderer.render(scene, camera);                             // um quadro com tudo, escondido atras do painel de carregamento
+    scene.remove(tmp);
+  }
   async function comecar(modo) {
     fecharPaineis();
     Object.assign(S, { historia: modo === 'historia', modo: modo === 'avaliacao' ? 'avaliacao' : 'treino' });
     const v0 = S.historia ? derivar({ ...sortear(), ...CEN.historia[0].variacao }) : sortear();
+    window.__som?.carregarFalas?.(['fala_radio', 'fala_parceiro', 'fala_apoio']);      // vozes so agora (na abertura travava o Quest); radio e equipe primeiro
     menu.mostrar({ tag: 'Treinamento', titulo: 'Carregando personagens…', texto: 'Aguarde alguns segundos.', botoes: [] });
     await Promise.race([Promise.all([carregarPapeis(papeisDaMissao(v0).map(k => PAPEL[k][0])), itensProntos]), new Promise(r => setTimeout(r, 40000))]);
+    await aquecer(papeisDaMissao(v0).map(k => PAPEL[k][0]));
     menu.esconder();
     HIST.length = 0;
     Object.assign(S, { ativo: true, inicio: performance.now(), fim: 0, erros: [], graves: [], log: [] });

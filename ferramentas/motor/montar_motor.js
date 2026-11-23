@@ -11,7 +11,7 @@ const rep = (s, a, b) => { if (!s.includes(a)) throw new Error('nao achou: ' + a
 A = rep(A, `const CEN = await fetch(HQ('treinamento/cenario_cs_01.json')).then(r => r.json());`, `const CEN = await fetch(HQ('treinamento/cenario_favela_01.json')).then(r => r.json());`);
 A = rep(A, faixa(251, 256), `  /* personagens reais (Rocketbox, licenca MIT): baixados so quando a missao precisa (personagens/<papel>.glb) */
   const modelos = {};
-  const glP = new GLTFLoader();
+  const glP = ctx.loaderGLB || new GLTFLoader();      // o do cenario: le KTX2 (texturas comprimidas) e meshopt
   const MANIF = fetch(HQ('personagens/manifest.json')).then(r => r.ok ? r.json() : {}).catch(() => ({}));
   const carregarPapeis = lista => MANIF.then(man => Promise.all([...new Set(lista)].filter(p => man[p] && !modelos[p]).map(p => glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))));`);
 // personagens andam nas escadas: a altura acompanha o chao

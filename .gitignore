@@ -10,3 +10,6 @@ ferramentas/*_log.txt
 *.blend1
 Thumbs.db
 desktop.ini
+
+# animacoes baixadas do Mixamo (licenca da Adobe: nao redistribuir os FBX; entram so convertidas nos personagens)
+07_Personagens/mixamo/
