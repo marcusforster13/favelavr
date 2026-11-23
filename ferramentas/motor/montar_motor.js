@@ -89,21 +89,23 @@ const base = `
   const invisivel = () => new THREE.MeshBasicMaterial({ visible: false });
 `;
 // ---- quedas ao levar tiro: as animacoes do Mixamo ("Dying") ja no esqueleto Rocketbox (personagens/quedas.glb), como no CIEP
-A = rep(A, "  function personagem(papel, nome, cor, altura, calca) {", `  let QUEDAS = null;
-  const quedasProntas = glP.loadAsync(HQ('personagens/quedas.glb')).then(g => {
+A = rep(A, "  function personagem(papel, nome, cor, altura, calca) {", `  // e as de arma dos bandidos (fuzil e pistola, Mixamo -> Rocketbox: personagens/armas_anim.glb)
+  let QUEDAS = [];
+  const prepAnim = g => {
     for (const clip of g.animations) {
       const t0 = Math.min(...clip.tracks.map(t => t.times[0]));      // animacao cortada no meio (morrendo_sentado): comeca em 0
       if (t0 > .1) { new Set(clip.tracks.map(t => t.times)).forEach(ts => { for (let i = 0; i < ts.length; i++) ts[i] -= t0; }); clip.resetDuration(); }
     }
     g.scene.updateMatrixWorld(true); const pe = g.scene.getObjectByName('Bip01_Pelvis');
-    QUEDAS = { clips: g.animations, quadril: pe ? g.scene.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y : 0 };
-  }).catch(() => { });
+    return { clips: g.animations, quadril: pe ? g.scene.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y : 0 };
+  };
+  const quedasProntas = Promise.all(['quedas', 'armas_anim'].map(a => glP.loadAsync(HQ('personagens/' + a + '.glb')).then(prepAnim).catch(() => null))).then(l => { QUEDAS = l.filter(q => q?.quadril); });
   function personagem(papel, nome, cor, altura, calca) {`);
 A = rep(A, "    for (const clip of base.animations) acoes[clip.name.replace(/\\.\\d+$/, '')] = mixer.clipAction(clip);", `    for (const clip of base.animations) acoes[clip.name.replace(/\\.\\d+$/, '')] = mixer.clipAction(clip);
-    if (QUEDAS?.quadril) {                                            // quedas na escala do quadril deste personagem
-      m.updateMatrixWorld(true); const pe = m.getObjectByName('Bip01_Pelvis');
-      const k = pe ? m.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y / QUEDAS.quadril : 1;
-      for (const clip of QUEDAS.clips) {
+    m.updateMatrixWorld(true); const peM = m.getObjectByName('Bip01_Pelvis');
+    for (const Q of QUEDAS) {                                         // quedas e armas na escala do quadril deste personagem
+      const k = peM ? m.worldToLocal(peM.getWorldPosition(new THREE.Vector3())).y / Q.quadril : 1;
+      for (const clip of Q.clips) {
         const nm = clip.name.replace(/\\.\\d+$/, ''); if (acoes[nm]) continue;
         const c = clip.clone(); if (Math.abs(k - 1) > .02) for (const t of c.tracks) if (/\\.position$/.test(t.name)) { t.values = t.values.slice(); for (let i = 0; i < t.values.length; i++) t.values[i] *= k; }
         acoes[nm] = mixer.clipAction(c);
@@ -117,6 +119,13 @@ A = rep(A, `    u.hit.scale.y = h; u.hit.position.y = h / 2;
       u.hit.position.x = l.x / 2; u.hit.position.z = l.z / 2; u.hit.scale.x = u.hit.scale.z = r;
     }
   }`);
+// armado: as animacoes do Mixamo da arma que ele segura (pistola ou fuzil) no lugar das genericas
+A = rep(A, `    const u = npc?.userData; if (!u?.real) return;
+    if (u.algemado`, `    const u = npc?.userData; if (!u?.real) return;
+    if (u.arma?.visible && !u.algemado && !u.rendido) nome = armaAnim(u, nome);
+    if (u.algemado`);
+B = rep(B, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;
+      if (/^pistola_/.test(n.userData.pose || '') && pistolaNasMaos(n, g)) continue;      // animacao de pistola: a arma segue a mao`);
 // carregar as quedas junto com os papeis da missao
 A = rep(A, "const carregarPapeis = lista => MANIF.then(man => Promise.all([...new Set(lista)]", "const carregarPapeis = lista => MANIF.then(man => Promise.all([quedasProntas, ...[...new Set(lista)]");
 A = rep(A, "glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))));", "glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))]));");

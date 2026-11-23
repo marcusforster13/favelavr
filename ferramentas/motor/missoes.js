@@ -111,11 +111,81 @@
     alinharOsso(fo, w.clone().sub(e), t.clone().sub(e));
   }
   const FZ = { ombro: new THREE.Vector3(), alvo: new THREE.Vector3(), dir: new THREE.Vector3(), lado: new THREE.Vector3(), cima: new THREE.Vector3(0, 1, 0), mR: new THREE.Vector3(), mL: new THREE.Vector3() };
+  /* fuzil na animacao do Mixamo: empunhadura na palma direita, guarda-mao na palma esquerda; antes, o tronco inclina
+     para cima ou para baixo ate o cano apontar para o alvo (atirador na laje mirando no policial embaixo, e o contrario) */
+  const FM = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), d: new THREE.Vector3(), q: new THREE.Quaternion(), eixo: new THREE.Vector3(), cima: new THREE.Vector3(0, 1, 0), M: new THREE.Matrix4() };
+  const palma = (m, L, v) => { const h = m.getObjectByName('Bip01_' + L + '_Hand'), f = m.getObjectByName('Bip01_' + L + '_Finger2'); h.getWorldPosition(v); if (f) v.lerp(f.getWorldPosition(FM.d), .45); return v; };
+  // animacao certa para a arma na mao (so troca se o personagem tiver a animacao)
+  function armaAnim(u, nome) {
+    const f = !!u.arma.userData.fuzil || u.arma.children.some(c => c.visible && c.userData.tipo === 'fuzil');
+    const mapa = f ? { apontando: 'fuzil_mirando', nervoso: 'fuzil_mirando', parada: 'fuzil_mirando', andando: 'fuzil_andando', correndo: 'fuzil_andando' }
+      : { apontando: 'pistola_parado', nervoso: 'pistola_parado', parada: 'pistola_parado', andando: 'pistola_andando', correndo: 'pistola_correndo' };
+    return u.acoes?.[mapa[nome]] ? mapa[nome] : nome;
+  }
+  /* pistola na animacao do Mixamo: a arma segue a mao (cano na direcao dos dedos, topo para o lado do indicador);
+     o corpo gira e o tronco inclina ate o cano apontar para o alvo */
+  const PM = { h: new THREE.Vector3(), i: new THREE.Vector3(), mi: new THREE.Vector3(), mn: new THREE.Vector3(), x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3(), M: new THREE.Matrix4(), q: new THREE.Quaternion() };
+  function canoPistola(m) {
+    const o = nm => m.getObjectByName(nm);
+    const h = o('Bip01_R_Hand'), fi = o('Bip01_R_Finger1'), fm = o('Bip01_R_Finger2'), fp = o('Bip01_R_Finger4'); if (!h || !fi || !fm || !fp) return null;
+    h.getWorldPosition(PM.h); fi.getWorldPosition(PM.i); fm.getWorldPosition(PM.mi); fp.getWorldPosition(PM.mn);
+    PM.y.copy(PM.i).sub(PM.mn).normalize();                          // do minimo para o indicador: o topo da arma
+    PM.z.copy(PM.mi).sub(PM.h); PM.z.addScaledVector(PM.y, -PM.z.dot(PM.y)).normalize();      // frente da mao (cano), sem a parte do topo
+    return PM.z;
+  }
+  function pistolaNasMaos(n, g) {
+    const u = n.userData, m = u.modelo; if (!m || !canoPistola(m)) return false;
+    if (u.alvoMira) FM.c.copy(u.alvoMira); else camera.getWorldPosition(FM.c);
+    u.semVirar = true;
+    if (!u.caido) {                                                  // gira o corpo ate o cano (horizontal) apontar para o alvo
+      const dy = Math.atan2(FM.c.x - PM.h.x, FM.c.z - PM.h.z) - Math.atan2(PM.z.x, PM.z.z);
+      n.rotation.y += Math.atan2(Math.sin(dy), Math.cos(dy)) * .25; u.giroBase = n.rotation.y; n.updateMatrixWorld(true);
+    }
+    for (let it = 0; it < 2; it++) {                                 // inclina o tronco ate o cano subir ou descer para o alvo
+      const c = canoPistola(m).clone(), alvo = FM.c.clone().sub(PM.h).normalize();
+      const ang = Math.asin(THREE.MathUtils.clamp(alvo.y, -1, 1)) - Math.asin(THREE.MathUtils.clamp(c.y, -1, 1));
+      FM.eixo.crossVectors(c.setY(0).normalize(), FM.cima).normalize(); if (Math.abs(ang) < .01 || !FM.eixo.lengthSq()) break;
+      FM.q.setFromAxisAngle(FM.eixo, ang);
+      for (const o of ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2']) { const b = m.getObjectByName(o); if (b) girarNoMundo(b, FM.q, 1 / 3, .5); }
+    }
+    canoPistola(m);
+    PM.x.crossVectors(PM.y, PM.z.clone().negate()).normalize(); PM.y.crossVectors(PM.z.clone().negate(), PM.x);
+    PM.M.makeBasis(PM.x, PM.y, PM.z.clone().negate()); g.quaternion.setFromRotationMatrix(PM.M);      // -Z da arma = cano
+    g.position.copy(PM.h).lerp(PM.mi, .55); g.translateY(.035); g.updateMatrixWorld(true);              // empunhadura na palma, cano acima da mao
+    return true;
+  }
+  function fuzilNasMaos(n, m, g) {
+    const u = n.userData; if (u.alvoMira) FM.c.copy(u.alvoMira); else camera.getWorldPosition(FM.c);
+    u.semVirar = true;                                           // quem gira o corpo e o cano, nao o rosto
+    // giro: na animacao de fuzil o corpo fica de lado; vira o personagem ate o cano (horizontal) apontar para o alvo
+    palma(m, 'R', FM.a); palma(m, 'L', FM.b);
+    const angCano = Math.atan2(FM.b.x - FM.a.x, FM.b.z - FM.a.z), angAlvo = Math.atan2(FM.c.x - FM.a.x, FM.c.z - FM.a.z);
+    const dy = Math.atan2(Math.sin(angAlvo - angCano), Math.cos(angAlvo - angCano));
+    if (!u.caido) { n.rotation.y += dy * .25; u.giroBase = n.rotation.y; n.updateMatrixWorld(true); }
+    // inclinacao: angulo entre o cano (da mao direita para a esquerda) e a direcao do alvo, no plano vertical
+    for (let it = 0; it < 2; it++) {
+      palma(m, 'R', FM.a); palma(m, 'L', FM.b);
+      const cano = FM.b.clone().sub(FM.a).normalize(), alvo = FM.c.clone().sub(FM.a).normalize();
+      const ang = Math.asin(THREE.MathUtils.clamp(alvo.y, -1, 1)) - Math.asin(THREE.MathUtils.clamp(cano.y, -1, 1));
+      FM.eixo.crossVectors(cano.setY(0).normalize(), FM.cima).normalize();
+      if (Math.abs(ang) < .01 || !FM.eixo.lengthSq()) break;
+      FM.q.setFromAxisAngle(FM.eixo, ang);
+      for (const o of ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2']) { const b = m.getObjectByName(o); if (b) girarNoMundo(b, FM.q, 1 / 3, .5); }
+    }
+    palma(m, 'R', FM.a); palma(m, 'L', FM.b);
+    // a arma aponta da mao direita para a esquerda (frente = -Z na arma); o "para cima" e o do personagem
+    FM.d.copy(FM.a).sub(FM.b).normalize();                      // +Z da arma (para tras, para a coronha)
+    const x = new THREE.Vector3().crossVectors(FM.cima, FM.d).normalize(), y = new THREE.Vector3().crossVectors(FM.d, x);
+    FM.M.makeBasis(x, y, FM.d); g.quaternion.setFromRotationMatrix(FM.M);
+    g.position.copy(FM.a).sub(new THREE.Vector3(0, -.07, .02).applyQuaternion(g.quaternion));      // empunhadura (0, -0,07, 0,02) na palma
+    g.updateMatrixWorld(true);
+  }
   function poseFuzil() {
     for (const n of Object.values(npcs)) {
       const u = n.userData, g = u.arma; if (!g?.visible || !g.userData.fuzil || !n.visible || u.caido) continue;
       const m = u.modelo, om = m?.getObjectByName('Bip01_R_UpperArm'); if (!om) continue;
       n.updateMatrixWorld(true);
+      if (/^fuzil_/.test(u.pose || '')) { fuzilNasMaos(n, m, g); continue; }      // animacao de fuzil do Mixamo: a arma vai nas maos
       om.getWorldPosition(FZ.ombro); camera.getWorldPosition(FZ.alvo);
       FZ.dir.copy(FZ.alvo).sub(FZ.ombro).normalize();
       FZ.lado.crossVectors(FZ.dir, FZ.cima).normalize();       // para a direita de quem segura
@@ -701,7 +771,7 @@
     if (n.position.distanceTo(V) > (u.limite || 50)) { u.saiu = true; esconderAtirador(n, true); return; }      // o policial ja passou: ele some
     n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.emCena = true;
     u.proxTiro = performance.now() + 700 + Math.random() * 700;
-    u.base = 'apontando'; animar(n, u.acoes?.apontando ? 'apontando' : 'nervoso', 1e6, .2);
+    const an = u.acoes?.fuzil_mirando ? 'fuzil_mirando' : u.acoes?.apontando ? 'apontando' : 'nervoso'; u.base = an; animar(n, an, 1e6, .2);
     sincAmeaca(); status();
     clearTimeout(u.tCiclo); u.tCiclo = setTimeout(() => esconderAtirador(n), 4000 + Math.random() * 3500);
   }
