@@ -151,7 +151,10 @@
     canoPistola(m);
     PM.x.crossVectors(PM.y, PM.z.clone().negate()).normalize(); PM.y.crossVectors(PM.z.clone().negate(), PM.x);
     PM.M.makeBasis(PM.x, PM.y, PM.z.clone().negate()); g.quaternion.setFromRotationMatrix(PM.M);      // -Z da arma = cano
-    g.position.copy(PM.h).lerp(PM.mi, .55); g.translateY(.035); g.updateMatrixWorld(true);              // empunhadura na palma, cano acima da mao
+    g.position.copy(PM.h).lerp(PM.mi, .55); g.translateY(.05); g.translateZ(-.045); g.updateMatrixWorld(true);      // empunhadura dentro do punho
+    // mao esquerda de apoio: o pulso ao lado e abaixo da empunhadura (as duas maos juntas na arma)
+    const alvoL = new THREE.Vector3(-.04, -.12, .06).applyMatrix4(g.matrixWorld), xG = new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion);
+    ikBraco(m, 'L', alvoL, xG.negate().add(new THREE.Vector3(0, -1.2, 0)));              // empunhadura na palma, cano acima da mao
     return true;
   }
   function fuzilNasMaos(n, m, g) {
