@@ -156,6 +156,7 @@
     }));
     lente.position.z = .136; lente.rotation.y = 0;                // olhando para tras (para o olho de quem segura)
     luneta.add(tubo, ocular, objetiva, base, lente);
+    luneta.userData.tubo = [tubo, ocular, objetiva, base];
     camMira.position.set(0, 0, -.14); luneta.add(camMira);           // a camera olha para -Z, junto com o cano
     luneta.userData.lente = lente;
   }
@@ -174,14 +175,14 @@
     if (renderer.xr.isPresenting) return;                           // no Quest a luneta e olhar pela lente
     if (on && !S.armaNaMao) sacar(true);
     mirando = on && S.armaNaMao;
-    const luneta_ = mirando && S.armaTipo === 'fuzil';
-    camera.fov = mirando ? (luneta_ ? 9 : 45) : fovNormal; camera.updateProjectionMatrix();
+    const luneta_ = mirando && S.armaTipo !== 'pistola';
+    camera.fov = mirando ? (S.armaTipo === 'sniper' ? 3.2 : luneta_ ? 9 : 45) : fovNormal; camera.updateProjectionMatrix();
     mira.style.display = luneta_ ? 'block' : 'none'; pontoPistola.style.display = mirando && !luneta_ ? 'block' : 'none';
     arma.visible = S.armaNaMao && !luneta_;
   }
   function renderizarMira() {
-    const ver = S.armaNaMao && S.armaTipo === 'fuzil' && renderer.xr.isPresenting;
-    luneta.visible = S.armaTipo === 'fuzil';
+    const ver = S.armaNaMao && S.armaTipo !== 'pistola' && renderer.xr.isPresenting;
+    luneta.visible = S.armaTipo !== 'pistola';
     if (!ver) return;
     const xr = renderer.xr.enabled, ant = renderer.getRenderTarget();
     luneta.userData.lente.visible = false;
@@ -192,6 +193,34 @@
   addEventListener('contextmenu', e => { if (e.target === renderer.domElement) e.preventDefault(); });
   renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 2) mirar(true); });
   addEventListener('pointerup', e => { if (e.button === 2) mirar(false); });
+
+  /* ---- recuo: pistola pula para cima e volta; fuzil da coice para tras (ombro), o cano sobe pouco e, na rajada,
+     vai subindo e abrindo (os tiros se espalham). No computador a mira sobe junto (puxe o mouse para baixo). ---- */
+  const REC = { calor: 0, ult: 0 };
+  function recuo(ray) {
+    const agora = performance.now();
+    if (S.armaTipo === 'pistola') { const rx = arma.rotation.x; arma.rotation.x = rx + .22; setTimeout(() => { arma.rotation.x = rx; }, 130); return; }
+    if (S.armaTipo === 'sniper') {                                     // ferrolho: um tiro, coice forte, volta devagar
+      const z0 = arma.position.z, rx = arma.rotation.x;
+      arma.position.z = z0 + .09; arma.rotation.x = rx + .14;
+      suave(.45, e => { arma.position.z = z0 + .09 * (1 - e); arma.rotation.x = rx + .14 * (1 - e); });
+      if (!renderer.xr.isPresenting) ctx.chutarMira?.(.035, (Math.random() - .5) * .01);
+      setTimeout(() => window.__som?.tocar('recarregar_pistola', null, false, { vol: .3 }), 500);      // som do ferrolho
+      return;
+    }
+    REC.calor = agora - REC.ult < 220 ? Math.min(1, REC.calor + .1) : 0; REC.ult = agora;
+    // espalhamento: cresce com a rajada (ate ~1,5 grau), sempre um pouco para cima
+    if (ray) {
+      const a = .004 + REC.calor * .022, d = ray.ray.direction;
+      const lado = new THREE.Vector3().crossVectors(d, UP).normalize(), cima = new THREE.Vector3().crossVectors(lado, d).normalize();
+      d.addScaledVector(lado, (Math.random() - .5) * a).addScaledVector(cima, Math.random() * a * .8).normalize();
+    }
+    const z0 = arma.position.z, rx = arma.rotation.x, ry = arma.rotation.y;
+    arma.position.z = z0 + .04;                                          // coice para tras
+    arma.rotation.x = rx + .045 + REC.calor * .04; arma.rotation.y = ry + (Math.random() - .5) * .03;
+    setTimeout(() => { arma.position.z = z0; arma.rotation.x = rx; arma.rotation.y = ry; }, 65);
+    if (!renderer.xr.isPresenting) ctx.chutarMira?.(.007 + REC.calor * .008, (Math.random() - .5) * .007);
+  }
 
   /* ---- rajada do fuzil: enquanto o gatilho (Quest) ou o botao esquerdo (computador) estiver apertado ---- */
   const rajada = { pc: false, ndc: new THREE.Vector2(), ray: new THREE.Raycaster(), engoliClique: false };
@@ -213,24 +242,32 @@
     for (const c of ctx.controles || []) if (c.userData.apertado && c.userData.mao !== 'left') atirarRajada(c);
   }
 
-  /* ---- armas do policial: pistola (modelos/arma.glb) e fuzil do autor; X (Quest), 1/2 ou X (computador) troca ---- */
-  const CAP = { pistola: 15, fuzil: 30 }, MUN = { pistola: 15, fuzil: 30 };
+  /* ---- armas do policial: pistola (modelos/arma.glb), fuzil e sniper do autor; X (Quest), 1/2/3 ou X (computador) troca ---- */
+  const CAP = { pistola: 15, fuzil: 30, sniper: 5 }, MUN = { pistola: 15, fuzil: 30, sniper: 5 };
+  const NOME_ARMA = { pistola: 'Pistola', fuzil: 'Fuzil', sniper: 'Fuzil de precisão' }, ORDEM_ARMAS = ['pistola', 'fuzil', 'sniper'];
+  // posicao de cada arma: clarao na boca, luneta (lente e camera de aumento) e lugar na tela do computador
+  const POS_ARMA = {
+    pistola: { boca: -.2, tela: [.17, -.13, -.38] },
+    fuzil: { boca: -.71, tela: [.16, -.2, -.28], luneta: [0, .115, .02], fov: 5, raio: 1, tubo: true },
+    sniper: { boca: -.84, tela: [.15, -.21, -.24], luneta: [0, .091, -.105], fov: 2, raio: .95, tubo: false }      // lente na ocular da luneta do modelo (z = 0,03)
+  };
   S.armaTipo = 'pistola';
-  gl.loadAsync(HQ('modelos/fuzil.glb')).then(g => { const m = prep(g.scene.clone()); m.userData.tipo = 'fuzil'; arma.add(m); mostrarArmaPolicial(); }).catch(() => { });
+  for (const tipo of ['fuzil', 'sniper']) gl.loadAsync(HQ('modelos/' + tipo + '.glb')).then(g => { const m = prep(g.scene.clone()); m.userData.tipo = tipo; m.visible = false; arma.add(m); mostrarArmaPolicial(); }).catch(() => { });
   function mostrarArmaPolicial() {
-    const f = S.armaTipo === 'fuzil';
-    for (const c of arma.children) if (c !== clarao && c !== luneta) c.visible = f ? c.userData.tipo === 'fuzil' : !c.userData.tipo;
-    luneta.visible = f;
-    clarao.position.z = f ? -.71 : -.2;                          // clarao na boca de cada arma
-    if (arma.parent === camera) arma.position.set(f ? .16 : .17, f ? -.2 : -.13, f ? -.28 : -.38);
+    const t = S.armaTipo, P = POS_ARMA[t];
+    for (const c of arma.children) if (c !== clarao && c !== luneta) c.visible = (c.userData.tipo || 'pistola') === t;
+    luneta.visible = !!P.luneta;
+    if (P.luneta) { luneta.position.fromArray(P.luneta); camMira.fov = P.fov; camMira.updateProjectionMatrix(); luneta.userData.lente.scale.setScalar(P.raio); for (const p of luneta.userData.tubo) p.visible = P.tubo; }
+    clarao.position.z = P.boca;                                    // clarao na boca de cada arma
+    if (arma.parent === camera) arma.position.fromArray(P.tela);
   }
   function trocarArma(tipo) {
     if (S.recarregando) return;
-    const novo = tipo || (S.armaTipo === 'pistola' ? 'fuzil' : 'pistola'); if (novo === S.armaTipo) { if (!S.armaNaMao) sacar(true); return; }
+    const novo = tipo || ORDEM_ARMAS[(ORDEM_ARMAS.indexOf(S.armaTipo) + 1) % ORDEM_ARMAS.length]; if (novo === S.armaTipo) { if (!S.armaNaMao) sacar(true); return; }
     MUN[S.armaTipo] = S.municao ?? CAP[S.armaTipo];
     S.armaTipo = novo; CARREGADOR = CAP[novo]; S.municao = MUN[novo];
     if (mirando) mirar(false); sacar(true); window.__som?.tocar('recarregar_pistola', null, false, { vol: .25 });
-    legenda('Equipamento', novo === 'fuzil' ? `Fuzil na mão (${S.municao}/30).` : `Pistola na mão (${S.municao}/15).`, 2); status();
+    legenda('Equipamento', `${NOME_ARMA[novo]} na mão (${S.municao}/${CAP[novo]}).`, 2); status();
   }
 
   // marcador do destino (modo treino): coluna de luz ambar que se ve de longe
@@ -384,7 +421,7 @@
 
   /* ================= fluxo da ocorrencia ================= */
   function novaOcorrencia(v, cap) {
-    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; MUN.pistola = CAP.pistola; MUN.fuzil = CAP.fuzil; CARREGADOR = CAP[S.armaTipo]; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
+    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; MUN.pistola = CAP.pistola; MUN.fuzil = CAP.fuzil; MUN.sniper = CAP.sniper; CARREGADOR = CAP[S.armaTipo]; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
     A = { n: HIST.length + 1, fase: 'chegada', titulo: cap?.titulo || `Ocorrência ${HIST.length + 1} · ${CEN.nomes_variacao.missao[v.missao]}`, apreendidos: new Set() };
     criarNPCs(v); sacar(false);
     for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
@@ -673,7 +710,7 @@
     if (susp?.userData.fugindo) b.unshift({ label: 'Ordenar: "Parado! Polícia!"', acao: () => { menu.esconder(); ordemVerbal(susp); } });
     if (S.armaNaMao) b.push({ label: `Recarregar a arma (${S.municao ?? CARREGADOR}/${CARREGADOR})`, acao: () => { menu.esconder(); recarregar(); } });
     b.push({ label: S.armaNaMao ? 'Guardar a arma' : 'Sacar a arma', acao: () => { sacar(!S.armaNaMao); menu.esconder(); } },
-      { label: S.armaTipo === 'fuzil' ? 'Trocar para a pistola' : 'Trocar para o fuzil', acao: () => { menu.esconder(); trocarArma(); } },
+      ...ORDEM_ARMAS.filter(t => t !== S.armaTipo).map(t => ({ label: 'Trocar para: ' + NOME_ARMA[t].toLowerCase(), acao: () => { menu.esconder(); trocarArma(t); } })),
       { label: 'Checklist desta ocorrência', acao: abrirChecklist },
       { label: 'Encerrar e ver o relatório', cor: 'rgba(240,80,64,.22)', acao: encerrar },
       { label: 'Fechar', acao: () => menu.esconder() });
@@ -888,6 +925,7 @@
     if (e.code === 'KeyR') recarregar();
     if (e.code === 'Digit1') trocarArma('pistola');
     if (e.code === 'Digit2') trocarArma('fuzil');
+    if (e.code === 'Digit3') trocarArma('sniper');
     if (e.code === 'KeyX') trocarArma();
     if (e.code === 'KeyZ') mirar(!mirando);
   });

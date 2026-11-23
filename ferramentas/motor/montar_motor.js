@@ -36,7 +36,10 @@ B = rep(B, `    const g = chave === 'seguranca_2' ? armaSolta2 : chave === 'atir
 B = rep(B, `const CARREGADOR = 15, MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();`, `let CARREGADOR = 15; const MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();`);
 B = rep(B, `arma.visible = on; mostrarControle('right', !on); status();`, `arma.visible = on; mostrarArmaPolicial(); mostrarControle('right', !on); status();`);
 // fuzil do policial atira em rajada: intervalo menor entre tiros
-B = rep(B, `if (agora - ultimoTiro < 280 || S.recarregando) return true;`, `if (agora - ultimoTiro < (S.armaTipo === 'fuzil' ? 95 : 280) || S.recarregando) return true;`);
+B = rep(B, `if (agora - ultimoTiro < 280 || S.recarregando) return true;`, `if (agora - ultimoTiro < ({ fuzil: 95, sniper: 1300 }[S.armaTipo] || 280) || S.recarregando) return true;`);
+// recuo depende da arma (recuo() em missoes.js): pistola pula para cima; fuzil coice no ombro, sobe e abre na rajada
+B = rep(B, `somTiro(); acenderFlash(clarao); capsula(arma); status(); const rx = arma.rotation.x; arma.rotation.x = rx + .22;
+    setTimeout(() => { arma.rotation.x = rx; }, 130);`, `somTiro(); acenderFlash(clarao); capsula(arma); status(); recuo(ray);`);
 // quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
 B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);
