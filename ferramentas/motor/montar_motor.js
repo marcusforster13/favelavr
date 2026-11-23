@@ -32,6 +32,8 @@ B = rep(B, `if (u.sentado) { u.sentado = false; n.position.y = .15; }`, `if (u.s
 B = rep(B, `    const g = chave === 'seguranca_2' ? armaSolta2 : chave === 'atirador' ? armaSolta3 : armaSolta;
     g.position.set(p.x + .35, .17, p.z + .2);`, `    const g = chave === 'vendedor' ? armaSolta2 : chave === 'morador' ? armaSolta3 : armaSolta;
     g.position.set(p.x + .35, p.y + .02, p.z + .2);`);
+// quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
+B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);
 B = rep(B, `        if (n.userData.ameaca) { registrar(k === 'atirador' ? 'resposta_sala' : 'resposta_proporcional', 'disparo'); if (ameacando().length <= 1) legenda('Instrutor', 'Agressão armada atual: o disparo foi resposta legítima. Agora, socorro imediato e comunicação.', 6); }
         else registrar('disparo_injustificado', n.userData.nome);`,

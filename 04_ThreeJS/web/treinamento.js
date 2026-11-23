@@ -729,7 +729,7 @@ export async function iniciar(ctx) {
   }
   function seguirArmaNPC() {
     for (const n of Object.values(npcs)) {
-      const g = n.userData.arma; if (!g?.visible) continue;
+      const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;
       const mao = n.userData.modelo?.getObjectByName('Bip01_R_Hand'); if (!mao) continue;
       mao.getWorldPosition(g.position); camera.getWorldPosition(GT);
       g.lookAt(GT); g.rotateY(Math.PI); g.translateZ(-.05); g.translateY(.075);      // a mao segura a empunhadura, abaixo do cano
@@ -830,17 +830,68 @@ export async function iniciar(ctx) {
   const hitArmaCasa = new THREE.Mesh(new THREE.BoxGeometry(.5, .3, .5), invisivelM()); hitArmaCasa.userData.item = 'arma_casa'; armaCasa.add(hitArmaCasa);
   const POS_ARMA_CASA = [48.5, 19.9, -4.9];      // sobre o colchao da cama do casal (topo a 19,6 m)
   const BOCA_ARMA = { pistola: -.2, revolver: -.24, fuzil: -.71 };                 // onde sai o clarao (um pouco a frente da boca)
-  for (const tipo of ['revolver', 'fuzil']) gl.loadAsync(HQ('modelos/' + tipo + '.glb')).then(g => {
-    for (const grp of [armaCasa, armaNPC3, armaSolta3]) { const m = prep(g.scene.clone()); m.userData.tipo = tipo; m.visible = false; grp.add(m); }
-    if (A && S.variacao.missao === 'residencia') escolherArma(S.variacao.arma_casa);
+  // armas dos suspeitos (modelos do autor): pistola 9 mm para todos; revolver e fuzil so na residencia.
+  // O modelo antigo (arma.glb, sem marca de tipo) continua so na mao do policial e como reserva enquanto carrega.
+  const GRUPOS_TIPO = { pistola9: [armaNPC, armaNPC2, armaNPC3, armaSolta, armaSolta2, armaSolta3, armaCasa], revolver: [armaCasa, armaNPC3, armaSolta3], fuzil: [armaCasa, armaNPC3, armaSolta3] };
+  const tipoGrupo = new Map([[armaNPC, 'pistola'], [armaNPC2, 'pistola'], [armaSolta, 'pistola'], [armaSolta2, 'pistola'], [armaNPC3, 'pistola'], [armaSolta3, 'pistola'], [armaCasa, 'pistola']]);
+  for (const [arq, grupos] of Object.entries(GRUPOS_TIPO)) gl.loadAsync(HQ('modelos/' + arq + '.glb')).then(g => {
+    const tipo = arq === 'pistola9' ? 'pistola' : arq;
+    for (const grp of grupos) { const m = prep(g.scene.clone()); m.userData.tipo = tipo; m.visible = false; grp.add(m); mostrarTipo(grp, tipoGrupo.get(grp)); }
   }).catch(() => { });
-  // mostra so o modelo da arma sorteada (pistola = o modelo sem marca de tipo); nao mexe no clarao nem na area de clique
+  // mostra so o modelo do tipo pedido (sem o modelo novo carregado, a pistola usa o antigo); nao mexe no clarao nem na area de clique
+  function mostrarTipo(grp, tipo) {
+    tipoGrupo.set(grp, tipo); grp.userData.fuzil = tipo === 'fuzil';
+    const temNovo = grp.children.some(c => c.userData.tipo === tipo);
+    for (const c of grp.children) if (!c.userData.luz && !(c.isMesh && c.material?.visible === false))
+      c.visible = temNovo ? c.userData.tipo === tipo : (tipo === 'pistola' && !c.userData.tipo);
+    if (grp.userData.flash) grp.userData.flash.position.z = BOCA_ARMA[tipo];
+  }
   function escolherArma(var_) {
     const tipo = var_ === 'revolver' || var_ === 'fuzil' ? var_ : 'pistola';
-    for (const grp of [armaCasa, armaNPC3, armaSolta3])
-      for (const c of grp.children) if (!c.userData.luz && !(c.isMesh && c.material?.visible === false)) c.visible = (c.userData.tipo || 'pistola') === tipo;
-    if (armaNPC3.userData.flash) armaNPC3.userData.flash.position.z = BOCA_ARMA[tipo];
+    for (const grp of [armaCasa, armaNPC3, armaSolta3]) mostrarTipo(grp, tipo);
     hitArmaCasa.scale.set(1, 1, tipo === 'fuzil' ? 2.2 : 1);
+  }
+
+  /* ---- pose de fuzil: coronha no ombro direito, cano para o policial; os bracos alcancam a arma por IK (dois ossos) ---- */
+  const IKV = { s: new THREE.Vector3(), e: new THREE.Vector3(), w: new THREE.Vector3(), t: new THREE.Vector3(), u: new THREE.Vector3(), p: new THREE.Vector3(), n: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3() };
+  const IKQ = { q: new THREE.Quaternion(), pq: new THREE.Quaternion(), wq: new THREE.Quaternion() };
+  function alinharOsso(osso, de, para) {                      // gira o osso (no mundo) para o vetor 'de' virar 'para'
+    IKQ.q.setFromUnitVectors(IKV.a.copy(de).normalize(), IKV.b.copy(para).normalize());
+    osso.parent.getWorldQuaternion(IKQ.pq); osso.getWorldQuaternion(IKQ.wq);
+    osso.quaternion.copy(IKQ.pq.invert().multiply(IKQ.q.multiply(IKQ.wq))); osso.updateMatrixWorld(true);
+  }
+  function ikBraco(m, lado, alvo, polo) {
+    const up = m.getObjectByName(`Bip01_${lado}_UpperArm`), fo = m.getObjectByName(`Bip01_${lado}_Forearm`), ha = m.getObjectByName(`Bip01_${lado}_Hand`);
+    if (!up || !fo || !ha) return;
+    const { s, e, w, t, u, p } = IKV;
+    up.getWorldPosition(s); fo.getWorldPosition(e); ha.getWorldPosition(w);
+    const a = s.distanceTo(e), b = e.distanceTo(w);
+    t.copy(alvo); let d = s.distanceTo(t); d = Math.min(Math.max(d, Math.abs(a - b) + 1e-3), a + b - 1e-3);
+    u.copy(t).sub(s).normalize(); t.copy(s).addScaledVector(u, d);
+    const cosA = (a * a + d * d - b * b) / (2 * a * d), sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+    p.copy(polo).addScaledVector(u, -polo.dot(u)).normalize();
+    const cotovelo = IKV.n.copy(s).addScaledVector(u, a * cosA).addScaledVector(p, a * sinA);
+    alinharOsso(up, e.clone().sub(s), cotovelo.clone().sub(s));
+    fo.getWorldPosition(e); ha.getWorldPosition(w);
+    alinharOsso(fo, w.clone().sub(e), t.clone().sub(e));
+  }
+  const FZ = { ombro: new THREE.Vector3(), alvo: new THREE.Vector3(), dir: new THREE.Vector3(), lado: new THREE.Vector3(), cima: new THREE.Vector3(0, 1, 0), mR: new THREE.Vector3(), mL: new THREE.Vector3() };
+  function poseFuzil() {
+    for (const n of Object.values(npcs)) {
+      const u = n.userData, g = u.arma; if (!g?.visible || !g.userData.fuzil || !n.visible || u.caido) continue;
+      const m = u.modelo, om = m?.getObjectByName('Bip01_R_UpperArm'); if (!om) continue;
+      n.updateMatrixWorld(true);
+      om.getWorldPosition(FZ.ombro); camera.getWorldPosition(FZ.alvo);
+      FZ.dir.copy(FZ.alvo).sub(FZ.ombro).normalize();
+      FZ.lado.crossVectors(FZ.dir, FZ.cima).normalize();       // para a direita de quem segura
+      // coronha (z = +0,28 na arma) encostada no ombro, um pouco para dentro do peito; a arma aponta para o policial
+      g.position.copy(FZ.ombro).addScaledVector(FZ.dir, .24).addScaledVector(FZ.lado, -.06).addScaledVector(FZ.cima, .02);
+      g.lookAt(FZ.alvo); g.rotateY(Math.PI); g.updateMatrixWorld(true);
+      FZ.mR.set(0, -.07, .02).applyMatrix4(g.matrixWorld);   // mao direita na empunhadura
+      FZ.mL.set(0, -.05, -.33).applyMatrix4(g.matrixWorld);  // mao esquerda no guarda-mao
+      ikBraco(m, 'R', FZ.mR, FZ.lado.clone().add(new THREE.Vector3(0, -1, 0)));
+      ikBraco(m, 'L', FZ.mL, FZ.lado.clone().negate().add(new THREE.Vector3(0, -1.2, 0)));
+    }
   }
 
   // marcador do destino (modo treino): coluna de luz ambar que se ve de longe
@@ -1457,6 +1508,7 @@ export async function iniciar(ctx) {
       if (encarar) { let d = Math.atan2(V.x - n.position.x, V.z - n.position.z) - n.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); n.rotation.y += d * Math.min(1, dt * (A?.ameaca ? 6 : 2.5)); }
       else if (u.fig && !u.fala && !u.destino && !u.rota?.length) { let d = u.giroBase - n.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); n.rotation.y += d * Math.min(1, dt * 1.2); }
     }
+    poseFuzil();                                                // fuzil: arma no ombro e bracos por IK (depois da animacao)
     seguirArmaNPC();
     if (S.ativo && Math.floor(agora / 1000) !== Math.floor((agora - dt * 1000) / 1000)) status();
   }
