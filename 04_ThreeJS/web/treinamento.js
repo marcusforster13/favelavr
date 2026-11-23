@@ -253,7 +253,16 @@ export async function iniciar(ctx) {
   const modelos = {};
   const glP = ctx.loaderGLB || new GLTFLoader();      // o do cenario: le KTX2 (texturas comprimidas) e meshopt
   const MANIF = fetch(HQ('personagens/manifest.json')).then(r => r.ok ? r.json() : {}).catch(() => ({}));
-  const carregarPapeis = lista => MANIF.then(man => Promise.all([...new Set(lista)].filter(p => man[p] && !modelos[p]).map(p => glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))));
+  const carregarPapeis = lista => MANIF.then(man => Promise.all([quedasProntas, ...[...new Set(lista)].filter(p => man[p] && !modelos[p]).map(p => glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))]));
+  let QUEDAS = null;
+  const quedasProntas = glP.loadAsync(HQ('personagens/quedas.glb')).then(g => {
+    for (const clip of g.animations) {
+      const t0 = Math.min(...clip.tracks.map(t => t.times[0]));      // animacao cortada no meio (morrendo_sentado): comeca em 0
+      if (t0 > .1) { new Set(clip.tracks.map(t => t.times)).forEach(ts => { for (let i = 0; i < ts.length; i++) ts[i] -= t0; }); clip.resetDuration(); }
+    }
+    g.scene.updateMatrixWorld(true); const pe = g.scene.getObjectByName('Bip01_Pelvis');
+    QUEDAS = { clips: g.animations, quadril: pe ? g.scene.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y : 0 };
+  }).catch(() => { });
   function personagem(papel, nome, cor, altura, calca) {
     const base = modelos[papel];
     if (!base) return boneco(nome, cor, altura, calca);
@@ -263,6 +272,15 @@ export async function iniciar(ctx) {
     g.add(m);
     const mixer = new THREE.AnimationMixer(m), acoes = {};
     for (const clip of base.animations) acoes[clip.name.replace(/\.\d+$/, '')] = mixer.clipAction(clip);
+    if (QUEDAS?.quadril) {                                            // quedas na escala do quadril deste personagem
+      m.updateMatrixWorld(true); const pe = m.getObjectByName('Bip01_Pelvis');
+      const k = pe ? m.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y / QUEDAS.quadril : 1;
+      for (const clip of QUEDAS.clips) {
+        const nm = clip.name.replace(/\.\d+$/, ''); if (acoes[nm]) continue;
+        const c = clip.clone(); if (Math.abs(k - 1) > .02) for (const t of c.tracks) if (/\.position$/.test(t.name)) { t.values = t.values.slice(); for (let i = 0; i < t.values.length; i++) t.values[i] *= k; }
+        acoes[nm] = mixer.clipAction(c);
+      }
+    }
     const parada = acoes.parada || Object.values(acoes)[0];
     if (parada) { parada.play(); parada.time = Math.random() * parada.getClip().duration; }
     // area de clique: cilindro do chao ao topo da cabeca (a altura acompanha a pose a cada quadro: em pe, agachado, escalando)
@@ -310,6 +328,10 @@ export async function iniciar(ctx) {
     cab.getWorldPosition(AH);
     const h = Math.max(.6, AH.y - n.position.y + .2);    // ate o topo da cabeca
     u.hit.scale.y = h; u.hit.position.y = h / 2;
+    if (u.pose === 'morrendo') {          // caido pela animacao: a area cobre dos pes a cabeca
+      const l = n.worldToLocal(AH.clone()); l.y = 0; const r = (l.length() / 2 + .25) / .42;
+      u.hit.position.x = l.x / 2; u.hit.position.z = l.z / 2; u.hit.scale.x = u.hit.scale.z = r;
+    }
   }
   function girarNoMundo(osso, q, fracao, maxAng) {       // aplica parte de uma rotacao do mundo ao osso, com limite
     OQ3.copy(OQ0).slerp(q, fracao);
@@ -367,7 +389,7 @@ export async function iniciar(ctx) {
     if (u.algemado && !nome.startsWith('algemado'))       // algemado: maos sempre nas costas
       nome = nome === 'andando' || nome === 'correndo' ? 'algemado_andando'
         : AGACHADO.has(nome) || (AGACHADO.has(u.pose) && nome !== 'parada') ? 'algemado_agachado' : 'algemado';
-    if (!u.acoes[nome]) return;
+    if (!u.acoes[nome] || u.pose === 'morrendo') return;       // depois de cair, nada troca a animacao
     u.pose = nome;
     const nova = u.acoes[nome];
     if (u.atual !== nova) { nova.reset().play(); u.atual?.crossFadeTo(nova, fade, false); u.atual = nova; }
@@ -510,9 +532,9 @@ export async function iniciar(ctx) {
     const h = rayG.intersectObjects(ctx.colisao(), false)[0];
     if (h?.face) mancha(h.point, GN.copy(h.face.normal).transformDirection(h.object.matrixWorld).clone(), .16 + Math.random() * .2);
   }
-  function pocaSangue(n) {
+  function pocaSangue(n, s = 1) {          // s = -1: corpo caido de costas (a poca fica atras dos pes)
     setTimeout(() => {
-      const m = mancha(new THREE.Vector3(n.position.x + Math.sin(n.rotation.y) * 1.0, ALT(n.position.x + Math.sin(n.rotation.y), n.position.z + Math.cos(n.rotation.y), n.position.y) + .004, n.position.z + Math.cos(n.rotation.y) * 1.0), new THREE.Vector3(0, 1, 0), .06);
+      const m = mancha(new THREE.Vector3(n.position.x + Math.sin(n.rotation.y) * s, ALT(n.position.x + Math.sin(n.rotation.y) * s, n.position.z + Math.cos(n.rotation.y) * s, n.position.y) + .004, n.position.z + Math.cos(n.rotation.y) * s), new THREE.Vector3(0, 1, 0), .06);
       suave(6, e => { m.scale.setScalar(.12 + .95 * e); });
     }, 900);
   }
@@ -610,22 +632,52 @@ export async function iniciar(ctx) {
         else registrar('disparo_injustificado', n.userData.nome);
         A.ferido = n; S.variacao.ferido = 'sim';
       }
-      sangue(hn.point, ray.ray.direction); cair(n); sincAmeaca();
+      sangue(hn.point, ray.ray.direction); cair(n, ray.ray.direction.clone()); sincAmeaca();
     } else {
       if (hp?.face) marcar(hp);
       if (S.ativo && A) registrar('disparo_sem_alvo');
     }
     return true;
   }
-  function cair(n) {
+  function cair(n, dirTiro = null) {          // dirTiro: direcao do tiro (de frente, a pessoa em pe cai de costas). Igual ao CIEP.
     const u = n.userData; u.caido = true; u.rota = []; u.destino = null; u.semVirar = true; u.aoChegar = null;
-    const lado = u.sentado ? 1 : -1; if (u.sentado) { u.sentado = false; n.position.y = ALT(n.position.x, n.position.z, n.position.y + 1); }      // sentado: tomba para a frente, no chao
+    const lado = u.sentado ? 1 : -1; if (u.sentado) { u.sentado = false; n.position.y = ALT(n.position.x, n.position.z, n.position.y + 1); }
     u.ameaca = false; u.atira = false;
     if (u.arma?.visible) { u.arma.visible = false; armaChao(n.position, u.chave); }
+    // em pe, tiro de frente: "Dying Backwards" de costas (~1,8 m); senao uma das duas quedas para a frente (~2 m)
+    const deFrente = dirTiro && (Math.sin(n.rotation.y) * dirTiro.x + Math.cos(n.rotation.y) * dirTiro.z) < 0;
+    let queda = lado < 0 ? ['morrendo_a', 'morrendo_b'].filter(k => u.acoes?.[k]) : (u.acoes?.morrendo_sentado ? ['morrendo_sentado'] : []);
+    let tras = lado > 0, dir = null;
+    if (lado < 0 && deFrente && u.acoes?.morrendo_tras) { dir = direcaoLivre(n, 1.8, true); if (dir !== null) { queda = ['morrendo_tras']; tras = true; } }
+    if (dir === null && queda.length) dir = direcaoLivre(n, lado < 0 ? 2.0 : 1.4, lado > 0);
+    if (dir !== null) {
+      const r0 = n.rotation.y, dr = Math.atan2(Math.sin(dir - r0), Math.cos(dir - r0));
+      suave(tras ? 1.1 : .45, e => { n.rotation.y = r0 + dr * e; }); setTimeout(() => pocaSangue(n, tras ? -1 : 1), 300);
+      const acao = u.acoes[queda[Math.floor(Math.random() * queda.length)]];
+      clearTimeout(u.volta); acao.reset(); acao.setLoop(THREE.LoopOnce, 1); acao.clampWhenFinished = true; acao.play();
+      u.atual?.crossFadeTo(acao, .15, false); u.atual = acao; u.pose = 'morrendo';
+      return;
+    }
+    const giro = direcaoLivre(n, 1.8); if (giro !== null) n.rotation.y = giro;      // sem lado livre: tombo antigo
     pocaSangue(n);
     const y0 = n.position.y, r0 = n.rotation.x;
     suave(.7, e => { n.rotation.x = r0 + (lado * Math.PI / 2 - r0) * e; n.position.y = y0 + .12 * e; });
   }
+  const rayQ = new THREE.Raycaster(); rayQ.firstHitOnly = true;
+  function direcaoLivre(n, dist, tras = false) {          // giro em que o corpo caido (ombros de 0,6 m) nao entra em parede; tras: queda de costas
+    const o = new THREE.Vector3(), d = new THREE.Vector3(), lado = new THREE.Vector3();
+    const perto = ctx.malhas().filter(m => m.userData.caixa && m.userData.caixa.distanceToPoint(n.position) < dist + 1);
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, .5, -.5, 1.5, -1.5, 2.5, -2.5, 3.5, -3.5]) {
+      const ry = n.rotation.y + k * Math.PI / 4; d.set(Math.sin(ry), 0, Math.cos(ry)).multiplyScalar(tras ? -1 : 1); lado.set(d.z, 0, -d.x);
+      const livre = [.25, .7].every(h => [-.3, 0, .3].every(l => {
+        o.copy(n.position).addScaledVector(lado, l).setY(n.position.y + h); rayQ.set(o, d); rayQ.far = dist;
+        return !rayQ.intersectObjects(perto, false).length;
+      }));
+      if (livre) return ry;
+    }
+    return null;
+  }
+
   // granada de efeito moral: arremesso em arco, quique no chao e nas paredes, estouro com clarao depois de 2,2 s
   const granadas = [], rayG = new THREE.Raycaster(); rayG.firstHitOnly = true;
   const GV = new THREE.Vector3(), GN = new THREE.Vector3(), GT = new THREE.Vector3();
@@ -1201,7 +1253,7 @@ export async function iniciar(ctx) {
 
   /* ================= fluxo da ocorrencia ================= */
   function novaOcorrencia(v, cap) {
-    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; MUN.pistola = CAP.pistola; MUN.fuzil = CAP.fuzil; MUN.sniper = CAP.sniper; CARREGADOR = CAP[S.armaTipo]; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
+    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 2; S.vida = 3; MUN.pistola = CAP.pistola; MUN.fuzil = CAP.fuzil; MUN.sniper = CAP.sniper; CARREGADOR = CAP[S.armaTipo]; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
     A = { n: HIST.length + 1, fase: 'chegada', titulo: cap?.titulo || `Ocorrência ${HIST.length + 1} · ${CEN.nomes_variacao.missao[v.missao]}`, apreendidos: new Set(), grupos: {}, limpo: {} };
     criarNPCs(v); sacar(false);
     for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
@@ -1426,7 +1478,7 @@ export async function iniciar(ctx) {
   });
   gl.loadAsync(HQ('modelos/fuzil.glb')).then(gg => { for (const g of armasAtacantes) { const m = prep(gg.scene.clone()); m.userData.tipo = 'fuzil'; g.add(m); } }).catch(() => { });
   const atacantes = () => Object.values(npcs).filter(n => n.userData.atacante);
-  const emCena = () => atacantes().filter(n => n.userData.emCena && !n.userData.caido && !n.userData.saiu);
+  const emCena = () => atacantes().filter(n => n.userData.emCena && !n.userData.caido && !n.userData.rendido && !n.userData.saiu);
   const livres = () => atacantes().filter(n => !n.userData.emCena);
   const ameacaPraca = () => ameacando().filter(n => !n.userData.atacante);
   const embaralhar = a => [...a].sort(() => Math.random() - .5);
@@ -1462,7 +1514,7 @@ export async function iniciar(ctx) {
     return null;
   }
   function aparecer(n) {
-    const u = n.userData; if (!A || A.fase === 'fim' || u.caido || u.saiu || npcs[u.chave] !== n) return;
+    const u = n.userData; if (!A || A.fase === 'fim' || u.caido || u.rendido || u.saiu || npcs[u.chave] !== n) return;
     camera.getWorldPosition(V);
     if (n.position.distanceTo(V) > (u.limite || 50)) { u.saiu = true; esconderAtirador(n, true); return; }      // o policial ja passou: ele some
     n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.emCena = true;
@@ -1472,11 +1524,11 @@ export async function iniciar(ctx) {
     clearTimeout(u.tCiclo); u.tCiclo = setTimeout(() => esconderAtirador(n), 4000 + Math.random() * 3500);
   }
   function esconderAtirador(n, deVez) {                         // abaixa atras da mureta / da esquina e volta depois
-    const u = n.userData; if (!A || u.caido || npcs[u.chave] !== n) return;
+    const u = n.userData; if (!A || u.caido || u.rendido || npcs[u.chave] !== n) return;
     n.visible = false; u.arma.visible = false; u.ameaca = false; u.atira = false; sincAmeaca(); status();
     if (!deVez) u.tCiclo = setTimeout(() => aparecer(n), 1800 + Math.random() * 2400);
   }
-  function soltar(n, p, opc = {}) {
+  function soltarAtirador(n, p, opc = {}) {
     const u = n.userData; posicionar(n, p);
     Object.assign(u, { emCena: true, cadencia: 1000, acerto: .12, limite: 35, ...opc });
     setTimeout(() => aparecer(n), opc.atraso || 0);
@@ -1495,7 +1547,7 @@ export async function iniciar(ctx) {
     if (!A || A.fase === 'fim') return;
     const k = ++A.onda, pts = A.ondas[k]; if (!pts) return;
     const ns = livres().slice(0, pts.length); A.grupoOnda = ns;
-    ns.forEach((n, i) => soltar(n, pts[i], { onda: k, cadencia: 700, acerto: .15, limite: 70, atraso: 1500 + i * 2500 }));
+    ns.forEach((n, i) => soltarAtirador(n, pts[i], { onda: k, cadencia: 700, acerto: .15, limite: 70, atraso: 1500 + i * 2500 }));
     radio(k === 0 ? CEN.radio.sniper_ataque : CEN.radio.sniper_onda);
     if (k === 0) dica('Tiros de lajes e becos! Abaixe atrás da mureta, ache o atirador pela luneta e reaja entre um tiro e outro.', 8);
   }
@@ -1511,7 +1563,7 @@ export async function iniciar(ctx) {
     const usados = [];
     livres().slice(0, qtos).forEach((n, i) => {
       const p = pontoEmboscada(11, 24, usados); if (!p) return; usados.push(p);
-      soltar(n, p, { grupo: 'rota', atraso: i * 1800 });
+      soltarAtirador(n, p, { grupo: 'rota', atraso: i * 1800 });
     });
     if (usados.length) { A.nEmb = (A.nEmb || 0) + 1; if (A.nEmb === 1) dica('Tiros! Abrigue-se atrás de uma parede, ache o atirador e reaja. Às vezes é um, às vezes dois.', 7); }
     return usados.length;
@@ -1522,7 +1574,7 @@ export async function iniciar(ctx) {
     ns.forEach((n, i) => {
       let p = i === 0 ? FIXO[lugar] : pontoEmboscada(9, 22, usados); if (!p) return; usados.push(p);
       if (i === 0) { n.position.copy(PT(p[0], p[1], p[2])); p = [n.position.x, n.position.y, n.position.z]; }
-      A.grupos[chave].push(soltar(n, p, { grupo: chave, atraso: 600 + i * 1500 }));
+      A.grupos[chave].push(soltarAtirador(n, p, { grupo: chave, atraso: 600 + i * 1500 }));
     });
   }
   function civisFogem() {
@@ -1541,7 +1593,7 @@ export async function iniciar(ctx) {
     if (!A.depFeito && perto(LOC.carga.alvo, 20)) { A.depFeito = true; defesa('deposito', Math.random() < .5 ? 3 : 2); }
     if (A.pista && !A.pistaFeito && perto(LOC[A.pista].alvo, 20)) { A.pistaFeito = true; registrar('seguir_pista'); defesa(A.pista, Math.random() < .5 ? 3 : 2, 'pista'); }
     for (const g of ['deposito', 'pista']) {
-      const gr = A.grupos[g]; if (!gr || A.limpo[g] || !gr.every(n => n.userData.caido || n.userData.saiu)) continue;
+      const gr = A.grupos[g]; if (!gr || A.limpo[g] || !gr.every(n => n.userData.caido || n.userData.rendido || n.userData.saiu)) continue;
       A.limpo[g] = true;
       if (g === 'deposito') { A.entrou = true; registrar('entrada_flagrante'); dica(v.carga_local === 'deposito' ? 'Depósito seguro (flagrante e agressão armada: entrada legítima). Ache a carga e lacre (clique nos objetos).' : 'Depósito seguro. A carga não está à vista: procure pistas nos objetos da mesa (clique neles).', 8); }
       else dica('Local seguro. Ache a carga e lacre (clique nela).', 6);
@@ -1570,7 +1622,7 @@ export async function iniciar(ctx) {
     A.cargaOk = true; registrar('carga_recuperada'); radio(CEN.radio.carga_ok); status();
   }
   function avaliarCarga() {
-    const sol = atacantes().filter(n => n.userData.emCena), caidos = sol.filter(n => n.userData.caido);
+    const sol = atacantes().filter(n => n.userData.emCena), caidos = sol.filter(n => n.userData.caido || n.userData.rendido);
     if (sol.length && caidos.length >= sol.length * .7) registrar('neutralizar_emboscadas');
     if (!S.graves.some(g => /disparo_injustificado|tiro_com_civis/.test(g.id))) registrar('controle_disparos');
   }
@@ -1641,7 +1693,7 @@ export async function iniciar(ctx) {
       setTimeout(() => radio('Ameaça contida. Equipe no controle da praça.'), 800);
     }
     if (S.variacao.sniper_cena === 'refem' && npcs.vendedor?.userData.ameaca) A.refemVisto = true;
-    if (A.grupoOnda?.length && !A.trocandoOnda && A.grupoOnda.every(n => n.userData.caido || n.userData.saiu)) {
+    if (A.grupoOnda?.length && !A.trocandoOnda && A.grupoOnda.every(n => n.userData.caido || n.userData.rendido || n.userData.saiu)) {
       if (A.onda < A.ondas.length - 1) { A.trocandoOnda = true; setTimeout(() => { if (A) { A.trocandoOnda = false; proximaOnda(); } }, 6000); }
       else if (!A.atiradoresOk) { A.atiradoresOk = true; registrar('neutralizar_atiradores'); radio('Ciente, atirador. Sem mais disparos contra a laje.'); }
     }
@@ -1714,8 +1766,8 @@ export async function iniciar(ctx) {
       tag: 'Treinamento · conteúdo sensível · versão ' + (window.__versao || '?'), titulo: 'Favela · denúncias na comunidade',
       texto: 'Duas missões de confronto. Recuperar a carga: suba até o depósito sob emboscadas, passando pelo bar da praça, e siga as pistas até a droga. Sniper: dê cobertura da laje à equipe que entra no bar, sob tiros de lajes e becos.\n\n' +
         'Há cenas de confronto armado, com disparos e sangue em adultos.\n' +
-        'Computador: clique fala/usa · T menu · Q saca ou guarda a arma (com ela na mão, o clique dispara) · R recarrega · K checklist.\n' +
-        'Quest: gatilho usa/clica · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · Y ou B abre o menu.',
+        'Computador: clique fala/usa · T menu · Q saca ou guarda a arma (com ela na mão, o clique dispara) · R recarrega · E granada · 1/2/3 troca a arma · K checklist.\n' +
+        'Quest: gatilho usa/clica · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · X troca a arma · granada pelo menu (segure o gatilho esquerdo, faça o movimento e solte) · Y ou B abre o menu.',
       botoes: [
         { label: 'Missão: recuperar a carga (com dicas)', acao: () => comecar('carga') },
         { label: 'Missão de sniper (cobertura da praça, com dicas)', acao: () => comecar('sniper') },
@@ -1771,6 +1823,7 @@ export async function iniciar(ctx) {
     if (A?.chegou && !A.decidiu) b.push({ label: 'Rádio: enquadramento e condução (encerrar a ocorrência)', acao: decidirFinal });
     if (susp?.userData.fugindo) b.unshift({ label: 'Ordenar: "Parado! Polícia!"', acao: () => { menu.esconder(); ordemVerbal(susp); } });
     if (S.armaNaMao) b.push({ label: `Recarregar a arma (${S.municao ?? CARREGADOR}/${CARREGADOR})`, acao: () => { menu.esconder(); recarregar(); } });
+    b.push({ label: renderer.xr.isPresenting ? (S.granadaNaMao ? 'Guardar a granada' : `Pegar granada de efeito moral (${S.granadas ?? 2})`) : `Lançar granada de efeito moral (${S.granadas ?? 2}) · tecla E`, acao: () => { menu.esconder(); renderer.xr.isPresenting ? pegarGranada(!S.granadaNaMao) : arremessar(); } });
     b.push({ label: S.armaNaMao ? 'Guardar a arma' : 'Sacar a arma', acao: () => { sacar(!S.armaNaMao); menu.esconder(); } },
       ...ORDEM_ARMAS.filter(t => t !== S.armaTipo).map(t => ({ label: 'Trocar para: ' + NOME_ARMA[t].toLowerCase(), acao: () => { menu.esconder(); trocarArma(t); } })),
       { label: 'Checklist desta ocorrência', acao: abrirChecklist },
@@ -1895,6 +1948,12 @@ export async function iniciar(ctx) {
     }
     return false;
   }
+  function arremessar(c) {                                     // computador: granada sai da altura do peito, na direcao do olhar
+    const o = new THREE.Vector3(), d = new THREE.Vector3(), fonte = (c && renderer.xr.isPresenting) ? c : camera;
+    fonte.getWorldPosition(o); fonte.getWorldDirection(d); if (fonte !== camera) d.negate();
+    if (fonte === camera) o.y -= .15;
+    lancarGranada(o, d);
+  }
   function botao(mao) { if (mao === 'right') sacar(!S.armaNaMao); else trocarArma(); }
 
   /* ================= objetivos (modo treino) e status ================= */
@@ -2009,6 +2068,7 @@ export async function iniciar(ctx) {
     if (e.code === 'Digit3') trocarArma('sniper');
     if (e.code === 'KeyX') trocarArma();
     if (e.code === 'KeyZ') mirar(!mirando);
+    if (e.code === 'KeyE') arremessar();
   });
   const bt = document.createElement('button'); bt.type = 'button'; bt.textContent = 'Iniciar treinamento'; bt.id = 'bTrein';
   bt.onclick = aviso; document.getElementById('acoes')?.prepend(bt);

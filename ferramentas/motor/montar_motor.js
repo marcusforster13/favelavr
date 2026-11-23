@@ -88,6 +88,84 @@ const base = `
   });
   const invisivel = () => new THREE.MeshBasicMaterial({ visible: false });
 `;
+// ---- quedas ao levar tiro: as animacoes do Mixamo ("Dying") ja no esqueleto Rocketbox (personagens/quedas.glb), como no CIEP
+A = rep(A, "  function personagem(papel, nome, cor, altura, calca) {", `  let QUEDAS = null;
+  const quedasProntas = glP.loadAsync(HQ('personagens/quedas.glb')).then(g => {
+    for (const clip of g.animations) {
+      const t0 = Math.min(...clip.tracks.map(t => t.times[0]));      // animacao cortada no meio (morrendo_sentado): comeca em 0
+      if (t0 > .1) { new Set(clip.tracks.map(t => t.times)).forEach(ts => { for (let i = 0; i < ts.length; i++) ts[i] -= t0; }); clip.resetDuration(); }
+    }
+    g.scene.updateMatrixWorld(true); const pe = g.scene.getObjectByName('Bip01_Pelvis');
+    QUEDAS = { clips: g.animations, quadril: pe ? g.scene.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y : 0 };
+  }).catch(() => { });
+  function personagem(papel, nome, cor, altura, calca) {`);
+A = rep(A, "    for (const clip of base.animations) acoes[clip.name.replace(/\\.\\d+$/, '')] = mixer.clipAction(clip);", `    for (const clip of base.animations) acoes[clip.name.replace(/\\.\\d+$/, '')] = mixer.clipAction(clip);
+    if (QUEDAS?.quadril) {                                            // quedas na escala do quadril deste personagem
+      m.updateMatrixWorld(true); const pe = m.getObjectByName('Bip01_Pelvis');
+      const k = pe ? m.worldToLocal(pe.getWorldPosition(new THREE.Vector3())).y / QUEDAS.quadril : 1;
+      for (const clip of QUEDAS.clips) {
+        const nm = clip.name.replace(/\\.\\d+$/, ''); if (acoes[nm]) continue;
+        const c = clip.clone(); if (Math.abs(k - 1) > .02) for (const t of c.tracks) if (/\\.position$/.test(t.name)) { t.values = t.values.slice(); for (let i = 0; i < t.values.length; i++) t.values[i] *= k; }
+        acoes[nm] = mixer.clipAction(c);
+      }
+    }`);
+A = rep(A, "if (!u.acoes[nome]) return;", "if (!u.acoes[nome] || u.pose === 'morrendo') return;       // depois de cair, nada troca a animacao");
+A = rep(A, `    u.hit.scale.y = h; u.hit.position.y = h / 2;
+  }`, `    u.hit.scale.y = h; u.hit.position.y = h / 2;
+    if (u.pose === 'morrendo') {          // caido pela animacao: a area cobre dos pes a cabeca
+      const l = n.worldToLocal(AH.clone()); l.y = 0; const r = (l.length() / 2 + .25) / .42;
+      u.hit.position.x = l.x / 2; u.hit.position.z = l.z / 2; u.hit.scale.x = u.hit.scale.z = r;
+    }
+  }`);
+// carregar as quedas junto com os papeis da missao
+A = rep(A, "const carregarPapeis = lista => MANIF.then(man => Promise.all([...new Set(lista)]", "const carregarPapeis = lista => MANIF.then(man => Promise.all([quedasProntas, ...[...new Set(lista)]");
+A = rep(A, "glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))));", "glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))]));");
+B = rep(B, "sangue(hn.point, ray.ray.direction); cair(n); sincAmeaca();", "sangue(hn.point, ray.ray.direction); cair(n, ray.ray.direction.clone()); sincAmeaca();");
+B = rep(B, "  function pocaSangue(n) {", "  function pocaSangue(n, s = 1) {          // s = -1: corpo caido de costas (a poca fica atras dos pes)");
+B = rep(B, "new THREE.Vector3(n.position.x + Math.sin(n.rotation.y) * 1.0, ALT(n.position.x + Math.sin(n.rotation.y), n.position.z + Math.cos(n.rotation.y), n.position.y) + .004, n.position.z + Math.cos(n.rotation.y) * 1.0)", "new THREE.Vector3(n.position.x + Math.sin(n.rotation.y) * s, ALT(n.position.x + Math.sin(n.rotation.y) * s, n.position.z + Math.cos(n.rotation.y) * s, n.position.y) + .004, n.position.z + Math.cos(n.rotation.y) * s)");
+{
+  const i0 = B.indexOf('  function cair(n) {'), i1 = B.indexOf('\n  }\n', i0) + 4;
+  if (i0 < 0) throw new Error('cair');
+  B = B.slice(0, i0) + `  function cair(n, dirTiro = null) {          // dirTiro: direcao do tiro (de frente, a pessoa em pe cai de costas). Igual ao CIEP.
+    const u = n.userData; u.caido = true; u.rota = []; u.destino = null; u.semVirar = true; u.aoChegar = null;
+    const lado = u.sentado ? 1 : -1; if (u.sentado) { u.sentado = false; n.position.y = ALT(n.position.x, n.position.z, n.position.y + 1); }
+    u.ameaca = false; u.atira = false;
+    if (u.arma?.visible) { u.arma.visible = false; armaChao(n.position, u.chave); }
+    // em pe, tiro de frente: "Dying Backwards" de costas (~1,8 m); senao uma das duas quedas para a frente (~2 m)
+    const deFrente = dirTiro && (Math.sin(n.rotation.y) * dirTiro.x + Math.cos(n.rotation.y) * dirTiro.z) < 0;
+    let queda = lado < 0 ? ['morrendo_a', 'morrendo_b'].filter(k => u.acoes?.[k]) : (u.acoes?.morrendo_sentado ? ['morrendo_sentado'] : []);
+    let tras = lado > 0, dir = null;
+    if (lado < 0 && deFrente && u.acoes?.morrendo_tras) { dir = direcaoLivre(n, 1.8, true); if (dir !== null) { queda = ['morrendo_tras']; tras = true; } }
+    if (dir === null && queda.length) dir = direcaoLivre(n, lado < 0 ? 2.0 : 1.4, lado > 0);
+    if (dir !== null) {
+      const r0 = n.rotation.y, dr = Math.atan2(Math.sin(dir - r0), Math.cos(dir - r0));
+      suave(tras ? 1.1 : .45, e => { n.rotation.y = r0 + dr * e; }); setTimeout(() => pocaSangue(n, tras ? -1 : 1), 300);
+      const acao = u.acoes[queda[Math.floor(Math.random() * queda.length)]];
+      clearTimeout(u.volta); acao.reset(); acao.setLoop(THREE.LoopOnce, 1); acao.clampWhenFinished = true; acao.play();
+      u.atual?.crossFadeTo(acao, .15, false); u.atual = acao; u.pose = 'morrendo';
+      return;
+    }
+    const giro = direcaoLivre(n, 1.8); if (giro !== null) n.rotation.y = giro;      // sem lado livre: tombo antigo
+    pocaSangue(n);
+    const y0 = n.position.y, r0 = n.rotation.x;
+    suave(.7, e => { n.rotation.x = r0 + (lado * Math.PI / 2 - r0) * e; n.position.y = y0 + .12 * e; });
+  }
+  const rayQ = new THREE.Raycaster(); rayQ.firstHitOnly = true;
+  function direcaoLivre(n, dist, tras = false) {          // giro em que o corpo caido (ombros de 0,6 m) nao entra em parede; tras: queda de costas
+    const o = new THREE.Vector3(), d = new THREE.Vector3(), lado = new THREE.Vector3();
+    const perto = ctx.malhas().filter(m => m.userData.caixa && m.userData.caixa.distanceToPoint(n.position) < dist + 1);
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, .5, -.5, 1.5, -1.5, 2.5, -2.5, 3.5, -3.5]) {
+      const ry = n.rotation.y + k * Math.PI / 4; d.set(Math.sin(ry), 0, Math.cos(ry)).multiplyScalar(tras ? -1 : 1); lado.set(d.z, 0, -d.x);
+      const livre = [.25, .7].every(h => [-.3, 0, .3].every(l => {
+        o.copy(n.position).addScaledVector(lado, l).setY(n.position.y + h); rayQ.set(o, d); rayQ.far = dist;
+        return !rayQ.intersectObjects(perto, false).length;
+      }));
+      if (livre) return ry;
+    }
+    return null;
+  }
+` + B.slice(i1);
+}
 const missoes = fs.readFileSync(path.join(__dirname, 'missoes.js'), 'utf8');
 fs.writeFileSync(SAIDA, cab + A + '\n' + base + '\n' + B + '\n' + missoes);
 console.log('motor montado:', (cab + A + base + B + missoes).split('\n').length, 'linhas');

@@ -17,7 +17,9 @@ const DEF = {
   porta_abrindo:       { tipo: 'evento', vol: .5 },
   algemas:             { tipo: 'evento', vol: .6 },
   tiro_pistola:        { tipo: 'evento', vol: 1 },
-  recarregar_pistola:  { tipo: 'evento', vol: .8 }
+  recarregar_pistola:  { tipo: 'evento', vol: .8 },
+  granada_efeito_moral: { tipo: 'evento', vol: 1 },
+  granada_quique:      { tipo: 'evento', vol: .5 }
 };
 
 export async function iniciarAudio({ scene, camera, renderer }) {
