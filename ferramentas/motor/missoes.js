@@ -115,6 +115,87 @@
      para cima ou para baixo ate o cano apontar para o alvo (atirador na laje mirando no policial embaixo, e o contrario) */
   const FM = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), d: new THREE.Vector3(), q: new THREE.Quaternion(), eixo: new THREE.Vector3(), cima: new THREE.Vector3(0, 1, 0), M: new THREE.Matrix4() };
   const palma = (m, L, v) => { const h = m.getObjectByName('Bip01_' + L + '_Hand'), f = m.getObjectByName('Bip01_' + L + '_Finger2'); h.getWorldPosition(v); if (f) v.lerp(f.getWorldPosition(FM.d), .45); return v; };
+  /* ---- arma na mao: nas poses de mira o cano vai no alvo (fuzilNasMaos / pistolaNasMaos) e guarda-se onde a arma ficou
+     em relacao a mao direita; nas outras (agachando, correndo, cambaleando) a arma so acompanha a mao ---- */
+  const POSE_MIRA = /^(fuzil_(mirando|atirando|ajoelhado)|pistola_(parado|ajoelhado))$/, MT = new THREE.Matrix4();
+  function armaNaMao(n, g, fuzil) {
+    const u = n.userData, m = u.modelo, mao = m?.getObjectByName('Bip01_R_Hand'); if (!mao) return false;
+    if (POSE_MIRA.test(u.pose || '')) {
+      if (fuzil) fuzilNasMaos(n, m, g); else if (!pistolaNasMaos(n, g)) return false;
+      if (u.coice) {                                               // coice da pistola: o cano sobe e volta em 0,15 s
+        const k = Math.max(0, 1 - (performance.now() - u.coice) / 150);
+        if (k > 0 && !fuzil) { g.rotateX(.35 * k); g.translateZ(.02 * k); g.updateMatrixWorld(true); }
+      }
+      mao.updateMatrixWorld(true); u.relArma = (u.relArma || new THREE.Matrix4()).copy(mao.matrixWorld).invert().multiply(g.matrixWorld);
+      return true;
+    }
+    if (!u.relArma) return false;
+    MT.multiplyMatrices(mao.matrixWorld, u.relArma); MT.decompose(g.position, g.quaternion, g.scale); g.updateMatrixWorld(true);
+    return true;
+  }
+  // toca uma animacao uma vez (ou de tras para a frente) e para no fim; 'depois' roda quando ela acaba
+  function tocarUmaVez(n, nome, { reverso = false, depois } = {}) {
+    const u = n.userData, a = u.acoes?.[nome]; if (!a || u.caido) return false;
+    clearTimeout(u.volta); clearTimeout(u.tUmaVez);
+    a.reset(); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.timeScale = reverso ? -1 : 1; if (reverso) a.time = a.getClip().duration;
+    a.play(); if (u.atual && u.atual !== a) u.atual.crossFadeTo(a, .15, false); u.atual = a; u.pose = nome;
+    if (depois) u.tUmaVez = setTimeout(() => { if (!u.caido && npcs[u.chave] === n) depois(); }, a.getClip().duration * 1000);
+    return true;
+  }
+  function aoAtirarNPC(n) {
+    const u = n.userData; u.coice = performance.now();
+    if (u.pose === 'fuzil_mirando' && u.acoes?.fuzil_atirando)
+      tocarUmaVez(n, 'fuzil_atirando', { depois: () => { if (u.pose === 'fuzil_atirando') animar(n, 'fuzil_mirando', 1e6, .1); } });
+  }
+  // agachado atras da mureta: protegido se do olho do policial nao se ve a cabeca dele
+  function protegido(n) {
+    const u = n.userData; if (!u.abrigado) return false;
+    const cab = u.modelo?.getObjectByName('Bip01_Head'); if (!cab) return true;
+    return !visadaLivre(cab.getWorldPosition(new THREE.Vector3()), camera.getWorldPosition(new THREE.Vector3()));
+  }
+  // tiro que nao derruba (mais ou menos 1 em 3, so uma vez): cambaleia e volta a atirar
+  function feridoLeve(n) {
+    const u = n.userData; if (!u.atacante || u.ferido || Math.random() > .35 || !u.acoes?.atingido_em_pe) return false;
+    u.ferido = true; u.atira = false; u.abrigado = false; clearTimeout(u.tCiclo);
+    tocarUmaVez(n, 'atingido_em_pe', { depois: () => aparecer(n) });
+    legenda('Atenção', 'Atingido, mas continua de pé e armado.', 2.5);
+    return true;
+  }
+  /* ---- correr para outro abrigo: so por chao continuo (escada pode, degrau de ate 45 cm; beirada de laje nao) e
+     sem parede no caminho; o destino precisa ter visada para o policial ---- */
+  const rayP = new THREE.Raycaster(), caixaP = new THREE.Box3();
+  function paredeEntre(a, b) {
+    caixaP.setFromPoints([a, b]); const d = a.distanceTo(b); if (d < .05) return false;
+    rayP.set(a, b.clone().sub(a).normalize()); rayP.far = d;
+    return !!rayP.intersectObjects(ctx.malhas().filter(o => o.userData.caixa?.intersectsBox(caixaP)), false)[0];
+  }
+  function caminhoChao(de, x, z) {
+    const n = Math.ceil(Math.hypot(x - de.x, z - de.z) / .4), pts = [de.clone()]; let y = de.y;
+    for (let i = 1; i <= n; i++) {
+      const px = de.x + (x - de.x) * i / n, pz = de.z + (z - de.z) * i / n, h = ctx.alturaChao(px, pz, y, .5);
+      if (h == null || Math.abs(h - y) > .45) return null;          // buraco, beirada ou parede alta
+      y = h; pts.push(new THREE.Vector3(px, y, pz));
+    }
+    for (let i = 0; i < pts.length - 1; i += 2) {                     // parede ou grade no caminho (joelho e peito)
+      const a = pts[i], b = pts[Math.min(i + 2, pts.length - 1)];
+      for (const hh of [.5, 1.2]) if (paredeEntre(a.clone().setY(a.y + hh), b.clone().setY(b.y + hh))) return null;
+    }
+    return pts[pts.length - 1];
+  }
+  function mudarDeAbrigo(n) {
+    const u = n.userData, olho = camera.getWorldPosition(new THREE.Vector3());
+    for (let t = 0; t < 14; t++) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 4;
+      const fim = caminhoChao(n.position, n.position.x + Math.sin(a) * r, n.position.z + Math.cos(a) * r); if (!fim) continue;
+      if (fim.distanceTo(olho) < 8 || !visadaLivre(fim.clone().setY(fim.y + 1.5), olho)) continue;
+      u.abrigado = false; u.atira = false; u.semVirar = false;
+      const fuzil = !!u.arma?.userData.fuzil;
+      rota(n, [[fim.x, fim.z]], fuzil ? 2.2 : 3.2, 'correndo', () => { u.giroBase = n.rotation.y; aparecer(n); });
+      return true;
+    }
+    return false;
+  }
+
   // animacao certa para a arma na mao (so troca se o personagem tiver a animacao)
   function armaAnim(u, nome) {
     const f = !!u.arma.userData.fuzil || u.arma.children.some(c => c.visible && c.userData.tipo === 'fuzil');
@@ -193,7 +274,7 @@
       const u = n.userData, g = u.arma; if (!g?.visible || !g.userData.fuzil || !n.visible || u.caido) continue;
       const m = u.modelo, om = m?.getObjectByName('Bip01_R_UpperArm'); if (!om) continue;
       n.updateMatrixWorld(true);
-      if (/^fuzil_/.test(u.pose || '')) { fuzilNasMaos(n, m, g); continue; }      // animacao de fuzil do Mixamo: a arma vai nas maos
+      if (armaNaMao(n, g, true)) continue;      // animacao de fuzil do Mixamo: a arma vai nas maos
       om.getWorldPosition(FZ.ombro); camera.getWorldPosition(FZ.alvo);
       FZ.dir.copy(FZ.alvo).sub(FZ.ombro).normalize();
       FZ.lado.crossVectors(FZ.dir, FZ.cima).normalize();       // para a direita de quem segura
@@ -777,7 +858,7 @@
     const u = n.userData; if (!A || A.fase === 'fim' || u.caido || u.rendido || u.saiu || npcs[u.chave] !== n) return;
     camera.getWorldPosition(V);
     if (n.position.distanceTo(V) > (u.limite || 50)) { u.saiu = true; esconderAtirador(n, true); return; }      // o policial ja passou: ele some
-    n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.emCena = true;
+    n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.emCena = true; u.abrigado = false;
     u.proxTiro = performance.now() + 700 + Math.random() * 700;
     const an = u.acoes?.fuzil_mirando ? 'fuzil_mirando' : u.acoes?.apontando ? 'apontando' : 'nervoso'; u.base = an; animar(n, an, 1e6, .2);
     sincAmeaca(); status();
@@ -785,7 +866,15 @@
   }
   function esconderAtirador(n, deVez) {                         // abaixa atras da mureta / da esquina e volta depois
     const u = n.userData; if (!A || u.caido || u.rendido || npcs[u.chave] !== n) return;
-    n.visible = false; u.arma.visible = false; u.ameaca = false; u.atira = false; sincAmeaca(); status();
+    if (/^atingido/.test(u.pose || '') || u.rota?.length || u.destino) { u.tCiclo = setTimeout(() => esconderAtirador(n, deVez), 1000); return; }
+    if (!deVez && u.acoes?.agachar) {
+      if (Math.random() < .35 && mudarDeAbrigo(n)) return;          // as vezes corre para outro abrigo
+      u.abrigado = true; u.atira = false;                            // agacha atras da mureta e levanta depois para atirar
+      tocarUmaVez(n, 'agachar');
+      u.tCiclo = setTimeout(() => tocarUmaVez(n, 'agachar', { reverso: true, depois: () => aparecer(n) }), 1800 + Math.random() * 2400);
+      return;
+    }
+    n.visible = false; u.arma.visible = false; u.ameaca = false; u.atira = false; u.abrigado = false; sincAmeaca(); status();
     if (!deVez) u.tCiclo = setTimeout(() => aparecer(n), 1800 + Math.random() * 2400);
   }
   function soltarAtirador(n, p, opc = {}) {
@@ -1339,7 +1428,7 @@
     apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
     menu: abrirMenu, quadro, estado: S, relatorio, trocarArma, mirar,
     _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,
-      decidirFinal, finalizar, reagir, atacantes, ataqueLaje, proximaOnda, emboscada, defesa, pontoEmboscada, emCena, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
+      decidirFinal, finalizar, reagir, atacantes, ataqueLaje, proximaOnda, emboscada, defesa, pontoEmboscada, emCena, mudarDeAbrigo, feridoLeve, protegido, caminhoChao, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
       ocorrencia: () => A, historico: HIST, botoes: () => (dialogo.mesh.visible ? dialogo : menu).botoes, painel: () => (dialogo.mesh.visible ? dialogo : menu.mesh.visible ? menu : null) }
   };
   return window.__trein;

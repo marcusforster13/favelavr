@@ -125,11 +125,15 @@ A = rep(A, `    const u = npc?.userData; if (!u?.real) return;
     if (u.arma?.visible && !u.algemado && !u.rendido) nome = armaAnim(u, nome);
     if (u.algemado`);
 B = rep(B, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;
-      if (/^pistola_/.test(n.userData.pose || '') && pistolaNasMaos(n, g)) continue;      // animacao de pistola: a arma segue a mao`);
+      if (armaNaMao(n, g, false)) continue;      // animacao de pistola: mira com a arma na mao; nas outras, a arma acompanha a mao`);
+// bandido que atira: coice (animacao de disparo do fuzil; na pistola, o cano sobe)
+B = rep(B, `somTiro(); if (g.userData.flash) acenderFlash(g.userData.flash); capsula(g);`, `somTiro(); if (g.userData.flash) acenderFlash(g.userData.flash); capsula(g); aoAtirarNPC(n);`);
+// abrigado atras da mureta: so leva tiro se o policial enxergar a cabeca dele
+B = rep(B, `const pessoas = Object.values(npcs).filter(n => n.visible && !n.userData.caido);`, `const pessoas = Object.values(npcs).filter(n => n.visible && !n.userData.caido && !protegido(n));`);
 // carregar as quedas junto com os papeis da missao
 A = rep(A, "const carregarPapeis = lista => MANIF.then(man => Promise.all([...new Set(lista)]", "const carregarPapeis = lista => MANIF.then(man => Promise.all([quedasProntas, ...[...new Set(lista)]");
 A = rep(A, "glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))));", "glP.loadAsync(HQ(man[p].arquivo)).then(g => { modelos[p] = g; }).catch(() => { }))]));");
-B = rep(B, "sangue(hn.point, ray.ray.direction); cair(n); sincAmeaca();", "sangue(hn.point, ray.ray.direction); cair(n, ray.ray.direction.clone()); sincAmeaca();");
+B = rep(B, "sangue(hn.point, ray.ray.direction); cair(n); sincAmeaca();", "sangue(hn.point, ray.ray.direction); if (!feridoLeve(n)) cair(n, ray.ray.direction.clone()); sincAmeaca();");      // tiro que nao derruba: o atirador cambaleia e volta
 B = rep(B, "  function pocaSangue(n) {", "  function pocaSangue(n, s = 1) {          // s = -1: corpo caido de costas (a poca fica atras dos pes)");
 B = rep(B, "new THREE.Vector3(n.position.x + Math.sin(n.rotation.y) * 1.0, ALT(n.position.x + Math.sin(n.rotation.y), n.position.z + Math.cos(n.rotation.y), n.position.y) + .004, n.position.z + Math.cos(n.rotation.y) * 1.0)", "new THREE.Vector3(n.position.x + Math.sin(n.rotation.y) * s, ALT(n.position.x + Math.sin(n.rotation.y) * s, n.position.z + Math.cos(n.rotation.y) * s, n.position.y) + .004, n.position.z + Math.cos(n.rotation.y) * s)");
 {
