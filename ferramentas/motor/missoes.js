@@ -155,8 +155,8 @@
     PM.z.copy(FM.c).sub(punho).normalize().negate();                 // +Z da arma = para tras
     PM.x.crossVectors(FM.cima, PM.z).normalize(); PM.y.crossVectors(PM.z, PM.x);
     PM.M.makeBasis(PM.x, PM.y, PM.z); g.quaternion.setFromRotationMatrix(PM.M);
-    // meio da empunhadura (medido no modelo: x 0, y -0,075, z +0,045) no centro do punho
-    g.position.copy(punho).sub(new THREE.Vector3(0, -.075, .045).applyQuaternion(g.quaternion)); g.updateMatrixWorld(true);
+    // empunhadura no centro do punho (o ponto da arma que fica ali: x 0, y -0,075, z +0,015; ajustado pela foto do autor)
+    g.position.copy(punho).sub(new THREE.Vector3(0, -.075, .015).applyQuaternion(g.quaternion)); g.updateMatrixWorld(true);
     // mao esquerda de apoio: o pulso ao lado e abaixo da empunhadura (as duas maos juntas na arma)
     const alvoL = new THREE.Vector3(-.045, -.13, .07).applyMatrix4(g.matrixWorld), xG = new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion);
     ikBraco(m, "L", alvoL, xG.negate().add(new THREE.Vector3(0, -1.2, 0)));
