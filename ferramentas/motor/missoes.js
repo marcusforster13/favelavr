@@ -193,6 +193,26 @@
   renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 2) mirar(true); });
   addEventListener('pointerup', e => { if (e.button === 2) mirar(false); });
 
+  /* ---- rajada do fuzil: enquanto o gatilho (Quest) ou o botao esquerdo (computador) estiver apertado ---- */
+  const rajada = { pc: false, ndc: new THREE.Vector2(), ray: new THREE.Raycaster(), engoliClique: false };
+  const naRajada = () => S.armaNaMao && S.armaTipo === 'fuzil' && !paineis.some(p => p.mesh.visible);
+  renderer.domElement.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || renderer.xr.isPresenting || !naRajada()) return;
+    rajada.pc = true; rajada.engoliClique = true; rajada.ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); atirarRajada();
+  });
+  renderer.domElement.addEventListener('pointermove', e => { if (rajada.pc) rajada.ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); });
+  addEventListener('pointerup', e => { if (e.button === 0) rajada.pc = false; });
+  function atirarRajada(c) {
+    if (c) { rajada.ray.ray.origin.setFromMatrixPosition(c.matrixWorld); rajada.ray.ray.direction.set(0, 0, -1).applyQuaternion(c.getWorldQuaternion(new THREE.Quaternion())); }
+    else rajada.ray.setFromCamera(mirando ? new THREE.Vector2(0, 0) : rajada.ndc, camera);
+    disparar(rajada.ray);                                         // o proprio disparo respeita a cadencia e recarrega sozinho
+  }
+  function rajadaQuadro() {
+    if (!naRajada()) { rajada.pc = false; return; }
+    if (rajada.pc) atirarRajada();
+    for (const c of ctx.controles || []) if (c.userData.apertado && c.userData.mao !== 'left') atirarRajada(c);
+  }
+
   /* ---- armas do policial: pistola (modelos/arma.glb) e fuzil do autor; X (Quest), 1/2 ou X (computador) troca ---- */
   const CAP = { pistola: 15, fuzil: 30 }, MUN = { pistola: 15, fuzil: 30 };
   S.armaTipo = 'pistola';
@@ -731,6 +751,7 @@
   /* ================= clique / gatilho ================= */
   const npcVisiveis = () => Object.values(npcs).filter(n => n.visible);
   function usar(ray, c) {
+    if (!c && rajada.engoliClique) { rajada.engoliClique = false; return true; }
     if (mirando && !c) ray.setFromCamera(new THREE.Vector2(0, 0), camera);      // olhando pela luneta: o tiro vai para o centro
     for (const p of paineis) if (p.clique(ray)) return true;
     if (S.armaNaMao && (!c || c.userData.mao !== 'left')) {
@@ -854,6 +875,7 @@
     poseFuzil();                                                // fuzil: arma no ombro e bracos por IK (depois da animacao)
     seguirArmaNPC();
     renderizarMira();
+    rajadaQuadro();
     if (S.ativo && Math.floor(agora / 1000) !== Math.floor((agora - dt * 1000) / 1000)) status();
   }
 
@@ -873,7 +895,8 @@
   bt.onclick = aviso; document.getElementById('acoes')?.prepend(bt);
 
   window.__trein = {
-    clique: ray => usar(ray), gatilho: (ray, c) => usar(ray, c), botao, recarregar, soltar,
+    clique: ray => usar(ray), gatilho: (ray, c) => { if (c) c.userData.apertado = true; return usar(ray, c); }, botao, recarregar,
+    soltar: c => { if (c) c.userData.apertado = false; soltar(c); },
     apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
     menu: abrirMenu, quadro, estado: S, relatorio, trocarArma, mirar,
     _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,

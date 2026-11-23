@@ -35,6 +35,8 @@ B = rep(B, `    const g = chave === 'seguranca_2' ? armaSolta2 : chave === 'atir
 // carregador muda com a arma do policial (pistola 15, fuzil 30); ao sacar, a posicao depende da arma
 B = rep(B, `const CARREGADOR = 15, MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();`, `let CARREGADOR = 15; const MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();`);
 B = rep(B, `arma.visible = on; mostrarControle('right', !on); status();`, `arma.visible = on; mostrarArmaPolicial(); mostrarControle('right', !on); status();`);
+// fuzil do policial atira em rajada: intervalo menor entre tiros
+B = rep(B, `if (agora - ultimoTiro < 280 || S.recarregando) return true;`, `if (agora - ultimoTiro < (S.armaTipo === 'fuzil' ? 95 : 280) || S.recarregando) return true;`);
 // quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
 B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);
