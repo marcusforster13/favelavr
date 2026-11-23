@@ -601,7 +601,7 @@ export async function iniciar(ctx) {
         if (n.userData.ameaca) {
           registrar('resposta_proporcional', 'disparo');
           // civis perto da linha de tiro (ate pouco depois do alvo): falha grave. Fuzil de precisao: margem estreita e so antes do alvo
-          const civis = Object.values(npcs).filter(c => c !== n && c.visible && !c.userData.caido && !/^(parceiro|apoio)$/.test(c.userData.chave));
+          const civis = Object.values(npcs).filter(c => c !== n && c.visible && !c.userData.caido && !/^(parceiro|apoio)$/.test(c.userData.chave) && !c.userData.ameaca && !c.userData.atacante);
           const o = ray.ray.origin, dd = ray.ray.direction;
           if (civis.some(c => { const p = c.position.clone().setY(c.position.y + 1.1).sub(o); const t = p.dot(dd); const sn = S.armaTipo === 'sniper'; return t > 0 && t < hn.distance + (sn ? 0 : 3) && p.addScaledVector(dd, -t).length() < (sn ? .28 : .8); })) registrar('tiro_com_civis');
           if (ameacando().length <= 1) legenda('Instrutor', 'Agressão armada atual: o disparo foi resposta legítima. Agora, socorro imediato e comunicação.', 6);
@@ -753,15 +753,15 @@ export async function iniciar(ctx) {
     const g = n.userData.arma; if (!g) return;
     somTiro(); if (g.userData.flash) acenderFlash(g.userData.flash); capsula(g);
     const de = g.position.clone(); camera.getWorldPosition(GT); const alvo = GT.clone();
-    if (visto(de, alvo) && Math.random() < (de.distanceTo(alvo) > 20 ? .1 : .3)) return policialAtingido();
+    if (visto(de, alvo) && Math.random() < (n.userData.acerto ?? (de.distanceTo(alvo) > 20 ? .1 : .3))) return policialAtingido();
     GV.copy(alvo).sub(de).normalize(); GV.x += (Math.random() - .5) * .3; GV.y += (Math.random() - .5) * .25; GV.z += (Math.random() - .5) * .3;
-    rayG.set(de, GV.normalize()); rayG.far = 30; const h = rayG.intersectObjects(ctx.colisao(), false)[0]; if (h?.face) marcar(h);
+    rayG.set(de, GV.normalize()); rayG.far = 90; const h = rayG.intersectObjects(ctx.colisao(), false)[0]; if (h?.face) marcar(h); if (!h || h.point.distanceTo(alvo) < 5) estouro(.035, 6500, .32);
   }
   function confronto() {                                      // agressores que atiram: um disparo a cada 1,5 a 2,8 s
     if (A && A.fase === 'fim') return; const agora = performance.now();
     for (const n of ameacando()) {
       const u = n.userData; if (!u.atira || u.destino || u.rota?.length || u.atordoado > agora) continue;
-      if (agora > u.proxTiro) { u.proxTiro = agora + 1500 + Math.random() * 1300; tiroInimigo(n); }
+      if (agora > u.proxTiro) { u.proxTiro = agora + (u.cadencia || 1500) + Math.random() * (u.cadencia ? 800 : 1300); tiroInimigo(n); }
     }
   }
 
@@ -776,7 +776,8 @@ export async function iniciar(ctx) {
     residencia: { alvo: [37.0, 19.0, -6.4], nome: 'Residência (acesso pela escadaria)', raio: 6 },
     bar:        { alvo: [10.0, 9.5, 16.0], nome: 'Bar da praça', raio: 8 },
     oficina:    { alvo: [-31.8, -.8, 36.6], nome: 'Oficina (Caminho inferior, Casa 28)', raio: 7 },
-    sniper:     { alvo: [-35, 17.2, 7], nome: 'Laje de observação (cobertura da praça)', raio: 4 }
+    sniper:     { alvo: [-35, 17.2, 7], nome: 'Laje de observação (cobertura da praça)', raio: 4 },
+    carga:      { alvo: [55.4, 18.0, -7.4], nome: 'Depósito da carga (Casa 67, Escadaria 5)', raio: 6 }
   };
   // rotas de fuga (correndo, seguindo o chao)
   const FUGA = {
@@ -1049,7 +1050,8 @@ export async function iniciar(ctx) {
   /* ================= variacoes ================= */
   function derivar(v) {
     v.lado = v.missao === 'oficina' ? 'oeste' : 'leste';
-    if (v.missao === 'sniper') v.evento = 'nenhum';
+    if (v.missao === 'sniper' || v.missao === 'carga') v.evento = 'nenhum';
+    if (v.missao === 'carga') v.suspeito = 'atira';
     v.ferido = 'nao';
     if (v.missao === 'residencia' && v.morador !== 'tranca') v.suspeito = 'rende';
     if (v.missao === 'oficina') v.suspeito = v.dono_oficina === 'foge' ? 'foge' : 'rende';
@@ -1072,9 +1074,9 @@ export async function iniciar(ctx) {
     mulher: ['mulher', 'Mulher do morador', 'f', 1.66], filho: ['crianca', 'Criança', 'c', 1.3],
     dono_oficina: ['dono_oficina', 'Dono da oficina', 'm', 1.78],
     olheiro: ['olheiro', 'Rapaz na laje', 'm', 1.75], comparsa: ['vigia', 'Homem armado', 'm', 1.8],
-    atirador_1: ['morador', 'Atirador', 'm', 1.8], atirador_2: ['vigia', 'Atirador', 'm', 1.8], atirador_3: ['vendedor', 'Atirador', 'm', 1.8], moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
+    moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
   };
-  const SUSPEITO = { deposito: 'vigia', bar: 'vendedor', oficina: 'dono_oficina', residencia: 'morador', sniper: 'vendedor' };
+  const SUSPEITO = { deposito: 'vigia', bar: 'vendedor', oficina: 'dono_oficina', residencia: 'morador', sniper: 'vendedor', carga: null };
   function limparNPCs() { Object.values(npcs).forEach(n => scene.remove(n)); for (const k in npcs) delete npcs[k]; }
   function novoNPC(chave, x, y, z, giro) {
     const [papel, nome, voz, alt] = PAPEL[chave];
@@ -1085,7 +1087,8 @@ export async function iniciar(ctx) {
     return n;
   }
   function papeisDaMissao(v) {
-    if (v.missao === 'sniper') return ['parceiro', 'apoio', 'vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b', 'atirador_1', 'atirador_2', 'atirador_3', ...(v.sniper_cena === 'dois' ? ['comparsa'] : [])];
+    if (v.missao === 'sniper') return ['parceiro', 'apoio', 'vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b', ...PAPEIS_ATIR, ...(v.sniper_cena === 'dois' ? ['comparsa'] : [])];
+    if (v.missao === 'carga') return ['parceiro', 'apoio', 'dono_bar', 'frequentador_a', 'frequentador_b', ...PAPEIS_ATIR];
     const L = ['parceiro', 'apoio', v.evento === 'crianca' ? 'crianca_rua' : v.evento];
     if (v.missao === 'deposito') L.push('vigia');
     if (v.missao === 'bar') L.push('vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b');
@@ -1099,6 +1102,12 @@ export async function iniciar(ctx) {
     if (v.missao === 'sniper') return criarSniper(v);
     novoNPC('parceiro', PARTIDA[0] + 1.2, -2.5, PARTIDA[1] + .8, OLHAR_PARTIDA);
     const ap = novoNPC('apoio', PARTIDA[0], -2.5, PARTIDA[1], 0); ap.visible = false;
+    if (v.missao === 'carga') {                                    // so a equipe, os civis do bar e os atiradores escondidos
+      criarAtacantes();
+      novoNPC('dono_bar', 15.9, 9.5, 15.1, olharPara(-1, .3));
+      novoNPC('frequentador_a', 8.5, 9.5, 16.3, olharPara(1, -.4)); novoNPC('frequentador_b', 7.4, 9.5, 15.2, olharPara(1, 0));
+      return;
+    }
     // evento do caminho
     const ev = EVENTO[v.lado][v.evento], ke = v.evento === 'crianca' ? 'crianca_rua' : v.evento;
     const ne = novoNPC(ke, ev[0], ev[1], ev[2], ev[3]); ne.userData.evento = true;
@@ -1193,9 +1202,13 @@ export async function iniciar(ctx) {
   /* ================= fluxo da ocorrencia ================= */
   function novaOcorrencia(v, cap) {
     S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; MUN.pistola = CAP.pistola; MUN.fuzil = CAP.fuzil; MUN.sniper = CAP.sniper; CARREGADOR = CAP[S.armaTipo]; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
-    A = { n: HIST.length + 1, fase: 'chegada', titulo: cap?.titulo || `Ocorrência ${HIST.length + 1} · ${CEN.nomes_variacao.missao[v.missao]}`, apreendidos: new Set() };
+    A = { n: HIST.length + 1, fase: 'chegada', titulo: cap?.titulo || `Ocorrência ${HIST.length + 1} · ${CEN.nomes_variacao.missao[v.missao]}`, apreendidos: new Set(), grupos: {}, limpo: {} };
     criarNPCs(v); sacar(false);
     for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
+    if (v.missao === 'carga') for (const [k, it] of Object.entries(itens)) {      // a carga num dos tres locais; no deposito ficam as pistas
+      const vis = k.startsWith('dep_') ? (v.carga_local === 'deposito' || !CARGA.deposito.includes(k)) : CARGA[v.carga_local].includes(k) || (v.carga_local === 'bar' && k.startsWith('bar_'));
+      it.o.visible = vis; it.h.visible = vis;
+    }
     if (v.missao === 'deposito' && v.deposito_indicios === 'escondidos') for (const k of ['dep_pacotes', 'dep_balanca', 'dep_caderno']) if (itens[k]) { itens[k].o.visible = false; itens[k].h.visible = false; }
     armaCasa.visible = v.missao === 'residencia'; escolherArma(v.arma_casa); armaCasa.position.copy(PT(POS_ARMA_CASA[0], POS_ARMA_CASA[1], POS_ARMA_CASA[2])); armaCasa.position.y += .03; armaCasa.rotation.set(0, .6, Math.PI / 2);      // deitada de lado sobre o colchao
     ctx.pousar(PARTIDA[0], PARTIDA[1]); ctx.setYaw(OLHAR_PARTIDA);
@@ -1207,6 +1220,12 @@ export async function iniciar(ctx) {
       trocarArma('sniper');
       abrir = () => radio(CEN.radio.sniper_inicio).then(() => dica('Olhe pela luneta (no Quest, leve o fuzil ao olho; no computador, botão direito). Depois informe pelo rádio o que vê (menu).', 9));
       A.tEntrada = setTimeout(() => { if (A && !A.relatou) entradaEquipe(); }, 75000);      // a equipe entra mesmo sem o relato
+      A.tAtaque = setTimeout(ataqueLaje, 25000);                                             // os tiros contra a laje comecam cedo
+    }
+    if (v.missao === 'carga') {
+      Object.assign(A, { plano: true, eventoFeito: true, grupos: {}, limpo: {}, ultEmb: performance.now(), posEmb: PT(PARTIDA[0], -2.5, PARTIDA[1]), nEmb: 0 }); delete LOC.pista;
+      trocarArma('fuzil');
+      abrir = () => radio(CEN.radio.inicio.replace('{denuncia}', CEN.denuncias.carga)).then(() => dica(`Destino: ${L.nome}. Vai ter tiro no caminho: avance de abrigo em abrigo. Informe a chegada pelo rádio (menu).`, 9));
     }
     if (cap) { fecharPaineis(); menu.mostrar({ tag: 'Modo história', titulo: cap.titulo, texto: cap.texto, longe: 1.3, botoes: [{ label: 'Começar', acao: () => { menu.esconder(); abrir(); } }] }); }
     else abrir();
@@ -1351,15 +1370,19 @@ export async function iniciar(ctx) {
     });
   }
   // ---- apreensao (cadeia de custodia)
-  function podeApreender() {
+  function podeApreender(k) {
     const v = S.variacao;
+    if (v.missao === 'carga') return !!A.limpo?.[k?.startsWith('dep_') ? 'deposito' : 'pista'];
     if (v.missao === 'deposito' || v.missao === 'residencia') return !!A.entrou;
     return !!A.anunciou;
   }
   function usarItem(k) {
     const it = itens[k], arma = k === 'arma_casa' || k === 'arma_chao';
-    const nome = arma ? 'Arma de fogo' : it.nome, texto = arma ? 'Arma de fogo carregada.' : it.texto;
-    if (!podeApreender()) return legenda('Vestígio', texto + ' Sem entrada legítima, não toque em nada.', 5);
+    const cg = S.variacao.missao === 'carga' && CARGA[S.variacao.carga_local].includes(k);
+    const nome = arma ? 'Arma de fogo' : cg ? it.nome + ' (a carga)' : it.nome;
+    const pista = !arma && podeApreender(k) && pistaCarga(k);
+    const texto = arma ? 'Arma de fogo carregada.' : cg ? 'Tabletes de droga embalados com fita: é a carga.' : pista ? it.texto + '\n' + pista : it.texto;
+    if (!podeApreender(k)) return legenda('Vestígio', texto + ' Sem entrada legítima, não toque em nada.', 5);
     const ops = arma ? [
       { id: 'lacrar', fala: 'Fotografar no lugar, descarregar apontando para local seguro e lacrar', acao: 'arma_segura', tambem: 'apreender_custodia' },
       { id: 'pegar', fala: 'Pegar e conferir na mão, de frente para o parceiro', erro: 'arma_sem_ameaca' }]
@@ -1373,7 +1396,7 @@ export async function iniciar(ctx) {
       A.apreendidos.add(k);
       if (k === 'arma_casa') armaCasa.visible = false; else if (k === 'arma_chao') { armaSolta.visible = false; armaSolta2.visible = false; armaSolta3.visible = false; }
       else { it.o.visible = false; it.h.visible = false; }
-      legenda('Apreensão', `${nome}: apreendido${op.id === 'lacrar' ? ' e lacrado' : ''}.`, 3); status();
+      legenda('Apreensão', `${nome}: apreendido${op.id === 'lacrar' ? ' e lacrado' : ''}.`, 3); cargaApreendida(k); status();
     }, texto);
   }
 
@@ -1387,35 +1410,169 @@ export async function iniciar(ctx) {
     if (!malhasPraca) malhasPraca = ctx.malhas().filter(o => o.userData.caixa?.intersectsBox(caixaPraca));
     return [...colisaoBase(), ...malhasPraca];
   };
-  /* atiradores contra a laje: 3 pontos sorteados entre lajes e becos com visada da laje (medidos no cenario) */
+  /* ================= atiradores: um grupo de bandidos com fuzil, usado nas duas missoes =================
+     Aparecem, atiram, se abaixam e reaparecem. No sniper vem em ondas de pontos fixos (lajes e becos com visada da laje);
+     na carga, emboscam pelo caminho em pontos achados na hora (laje ou rua com visada para o policial). */
+  const N_ATIR = 12, MODELO_ATIR = ['morador', 'vigia', 'olheiro', 'vendedor', 'dono_oficina'];
+  for (let i = 1; i <= N_ATIR; i++) PAPEL['atirador_' + i] = [MODELO_ATIR[(i - 1) % MODELO_ATIR.length], 'Atirador', 'm', 1.8];
+  const PAPEIS_ATIR = Array.from({ length: N_ATIR }, (_, i) => 'atirador_' + (i + 1));
   const PONTOS_ATIRADOR = {
     laje: [[-36, 32.5, -20], [-24, 32.5, -20], [-64, 18.5, -12], [-6, 20.8, -8], [-70, 12.1, 8], [-4, 12.1, 24]],
     beco: [[-60, 7, 24], [-36, 5.3, 30], [-24, 5.3, 34], [-10, 5, 34]]
   };
-  const armasAtacantes = [0, 1, 2].map(() => {
+  const armasAtacantes = PAPEIS_ATIR.map(() => {
     const g = new THREE.Group(); g.visible = false; g.userData.fuzil = true; scene.add(g);
     const fl = criarFlash(.28); fl.position.set(0, 0, -.71); g.add(fl); g.userData.flash = fl; return g;
   });
   gl.loadAsync(HQ('modelos/fuzil.glb')).then(gg => { for (const g of armasAtacantes) { const m = prep(gg.scene.clone()); m.userData.tipo = 'fuzil'; g.add(m); } }).catch(() => { });
   const atacantes = () => Object.values(npcs).filter(n => n.userData.atacante);
+  const emCena = () => atacantes().filter(n => n.userData.emCena && !n.userData.caido && !n.userData.saiu);
+  const livres = () => atacantes().filter(n => !n.userData.emCena);
   const ameacaPraca = () => ameacando().filter(n => !n.userData.atacante);
-  function criarAtacantes() {
-    const emb = a => [...a].sort(() => Math.random() - .5);
-    const pts = [emb(PONTOS_ATIRADOR.laje)[0], emb(PONTOS_ATIRADOR.beco)[0], emb([...PONTOS_ATIRADOR.laje, ...PONTOS_ATIRADOR.beco])[0]];
-    if (pts[2] === pts[0] || pts[2] === pts[1]) pts[2] = PONTOS_ATIRADOR.laje.find(p => p !== pts[0]);
-    pts.forEach(([x, y, z], i) => {
-      const n = novoNPC('atirador_' + (i + 1), x, y, z, olharPara(-35 - x, 7 - z));
+  const embaralhar = a => [...a].sort(() => Math.random() - .5);
+  function criarAtacantes() {                                     // todos escondidos; cada missao posiciona e solta
+    PAPEIS_ATIR.forEach((k, i) => {
+      const n = novoNPC(k, PARTIDA[0], -2.5, PARTIDA[1], 0);
       Object.assign(n.userData, { atacante: true, arma: armasAtacantes[i], semVirar: false }); n.visible = false;
     });
   }
+  function posicionar(n, p) {
+    n.position.set(p[0], p[1], p[2]); camera.getWorldPosition(V);
+    n.rotation.y = olharPara(V.x - p[0], V.z - p[2]); n.userData.giroBase = n.rotation.y;
+  }
+  // visada de verdade (todo o cenario carregado entre os dois pontos, nao so o perto do policial)
+  const rayV = new THREE.Raycaster(), caixaV = new THREE.Box3();
+  function visadaLivre(a, b) {
+    caixaV.setFromPoints([a, b]); const d = a.distanceTo(b);
+    rayV.set(a, b.clone().sub(a).normalize()); rayV.far = d - .4;
+    return !rayV.intersectObjects(ctx.malhas().filter(o => o.userData.caixa?.intersectsBox(caixaV)), false)[0];
+  }
+  // ponto de emboscada perto do policial: laje ou rua (a superficie mais alta ali), plana, com visada para a cabeca dele
+  function pontoEmboscada(min = 11, max = 24, longeDe = []) {
+    camera.getWorldPosition(V); camera.getWorldDirection(V2); const olho = V.clone(), giro = Math.atan2(V2.x, V2.z);
+    for (let t = 0; t < 70; t++) {
+      const a = giro + (Math.random() - .5) * (t < 45 ? 2.4 : 5.5), r = min + Math.random() * (max - min);
+      const x = olho.x + Math.sin(a) * r, z = olho.z + Math.cos(a) * r;
+      const y = ctx.alturaChao(x, z, olho.y - 8, 22); if (y == null || y < -3.2 || y > olho.y + 14) continue;
+      if ([[.5, 0], [-.5, 0], [0, .5], [0, -.5]].some(([dx, dz]) => Math.abs((ctx.alturaChao(x + dx, z + dz, y, 1.2) ?? -99) - y) > .3)) continue;      // borda ou telhado inclinado
+      if (longeDe.some(p => Math.hypot(p[0] - x, p[2] - z) < 4)) continue;
+      if (!visadaLivre(new THREE.Vector3(x, y + 1.5, z), olho)) continue;
+      return [x, y, z];
+    }
+    return null;
+  }
+  function aparecer(n) {
+    const u = n.userData; if (!A || A.fase === 'fim' || u.caido || u.saiu || npcs[u.chave] !== n) return;
+    camera.getWorldPosition(V);
+    if (n.position.distanceTo(V) > (u.limite || 50)) { u.saiu = true; esconderAtirador(n, true); return; }      // o policial ja passou: ele some
+    n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.emCena = true;
+    u.proxTiro = performance.now() + 700 + Math.random() * 700;
+    u.base = 'apontando'; animar(n, u.acoes?.apontando ? 'apontando' : 'nervoso', 1e6, .2);
+    sincAmeaca(); status();
+    clearTimeout(u.tCiclo); u.tCiclo = setTimeout(() => esconderAtirador(n), 4000 + Math.random() * 3500);
+  }
+  function esconderAtirador(n, deVez) {                         // abaixa atras da mureta / da esquina e volta depois
+    const u = n.userData; if (!A || u.caido || npcs[u.chave] !== n) return;
+    n.visible = false; u.arma.visible = false; u.ameaca = false; u.atira = false; sincAmeaca(); status();
+    if (!deVez) u.tCiclo = setTimeout(() => aparecer(n), 1800 + Math.random() * 2400);
+  }
+  function soltar(n, p, opc = {}) {
+    const u = n.userData; posicionar(n, p);
+    Object.assign(u, { emCena: true, cadencia: 1000, acerto: .12, limite: 35, ...opc });
+    setTimeout(() => aparecer(n), opc.atraso || 0);
+    return n;
+  }
+
+  /* ---- sniper: 8 atiradores em tres ondas (3, 3 e 2) contra a laje; a primeira comeca 25 s depois do inicio ---- */
   function ataqueLaje() {
-    atacantes().forEach((n, i) => setTimeout(() => {
-      if (!A || A.fase === 'fim' || n.userData.caido) return;
-      const u = n.userData; n.visible = true; u.arma.visible = true; u.ameaca = true; u.atira = true; u.proxTiro = performance.now() + 1800;
-      u.base = 'apontando'; animar(n, u.acoes?.apontando ? 'apontando' : 'nervoso', 1e6, .2);
-      if (i === 0) { radio(CEN.radio.sniper_ataque); dica('Tiros de lajes e becos! Abaixe atrás da mureta, ache o atirador pela luneta e reaja.', 7); }
-      sincAmeaca(); status();
-    }, 7000 + i * 4500));
+    if (!A || A.ataqueIniciado) return; A.ataqueIniciado = true;
+    const lajes = embaralhar(PONTOS_ATIRADOR.laje), becos = embaralhar(PONTOS_ATIRADOR.beco);
+    const pts = [lajes[0], becos[0], lajes[1], lajes[2], becos[1], lajes[3], becos[2], lajes[4]];
+    A.ondas = [pts.slice(0, 3), pts.slice(3, 6), pts.slice(6, 8)]; A.onda = -1;
+    proximaOnda();
+  }
+  function proximaOnda() {
+    if (!A || A.fase === 'fim') return;
+    const k = ++A.onda, pts = A.ondas[k]; if (!pts) return;
+    const ns = livres().slice(0, pts.length); A.grupoOnda = ns;
+    ns.forEach((n, i) => soltar(n, pts[i], { onda: k, cadencia: 700, acerto: .15, limite: 70, atraso: 1500 + i * 2500 }));
+    radio(k === 0 ? CEN.radio.sniper_ataque : CEN.radio.sniper_onda);
+    if (k === 0) dica('Tiros de lajes e becos! Abaixe atrás da mureta, ache o atirador pela luneta e reaja entre um tiro e outro.', 8);
+  }
+
+  /* ---- carga: emboscadas no caminho, recepcao a tiro no bar e defesa de cada local ---- */
+  const CARGA = { deposito: ['dep_bolsa', 'dep_pacotes'], bar: ['bar_pacotes'], oficina: ['ofi_maleta'] };
+  const FIXO = { bar: [11.2, 9.5, 15.0], deposito: [52.7, 18.1, -7.6], oficina: [-32.6, -.8, 33.2] };
+  const PISTA = {
+    dep_caderno: { bar: 'Última página do caderno: "mercadoria — bar da praça, atrás do balcão".', oficina: 'Última página do caderno: "mercadoria — oficina de baixo, maleta da bancada".' },
+    dep_radio: { bar: 'No rádio, uma voz: "Desceu tudo pro balcão do bar da praça!"', oficina: 'No rádio, uma voz: "Leva a maleta pra oficina lá de baixo!"' }
+  };
+  function emboscada(qtos) {
+    const usados = [];
+    livres().slice(0, qtos).forEach((n, i) => {
+      const p = pontoEmboscada(11, 24, usados); if (!p) return; usados.push(p);
+      soltar(n, p, { grupo: 'rota', atraso: i * 1800 });
+    });
+    if (usados.length) { A.nEmb = (A.nEmb || 0) + 1; if (A.nEmb === 1) dica('Tiros! Abrigue-se atrás de uma parede, ache o atirador e reaja. Às vezes é um, às vezes dois.', 7); }
+    return usados.length;
+  }
+  function defesa(lugar, qtos, chave = lugar) {
+    const ns = livres().slice(0, qtos), usados = [FIXO[lugar]];
+    A.grupos[chave] = [];
+    ns.forEach((n, i) => {
+      let p = i === 0 ? FIXO[lugar] : pontoEmboscada(9, 22, usados); if (!p) return; usados.push(p);
+      if (i === 0) { n.position.copy(PT(p[0], p[1], p[2])); p = [n.position.x, n.position.y, n.position.z]; }
+      A.grupos[chave].push(soltar(n, p, { grupo: chave, atraso: 600 + i * 1500 }));
+    });
+  }
+  function civisFogem() {
+    for (const k of ['dono_bar', 'frequentador_a', 'frequentador_b']) {
+      const n = npcs[k]; if (!n || n.userData.caido || n.userData.fugiu) continue;
+      n.userData.fugiu = true;
+      rota(n, [[n.position.x - 2, n.position.z + 2], ...FUGA.bar.slice(2)], 3.4, 'correndo', () => { n.visible = false; });
+    }
+  }
+  const reservaCarga = () => (A.barFeito ? 0 : 2) + (A.depFeito ? 0 : 3) + (S.variacao.carga_local !== 'deposito' && !A.pistaFeito ? 3 : 0);
+  const VC = new THREE.Vector3();
+  function cargaQuadro(agora) {
+    const v = S.variacao; camera.getWorldPosition(VC);
+    const perto = (L, r) => Math.hypot(VC.x - L[0], VC.z - L[2]) < r && Math.abs(VC.y - 1.6 - L[1]) < 9;
+    if (!A.barFeito && perto(LOC.bar.alvo, 20)) { A.barFeito = true; defesa('bar', 2); civisFogem(); radio(CEN.radio.carga_bar); }
+    if (!A.depFeito && perto(LOC.carga.alvo, 20)) { A.depFeito = true; defesa('deposito', Math.random() < .5 ? 3 : 2); }
+    if (A.pista && !A.pistaFeito && perto(LOC[A.pista].alvo, 20)) { A.pistaFeito = true; registrar('seguir_pista'); defesa(A.pista, Math.random() < .5 ? 3 : 2, 'pista'); }
+    for (const g of ['deposito', 'pista']) {
+      const gr = A.grupos[g]; if (!gr || A.limpo[g] || !gr.every(n => n.userData.caido || n.userData.saiu)) continue;
+      A.limpo[g] = true;
+      if (g === 'deposito') { A.entrou = true; registrar('entrada_flagrante'); dica(v.carga_local === 'deposito' ? 'Depósito seguro (flagrante e agressão armada: entrada legítima). Ache a carga e lacre (clique nos objetos).' : 'Depósito seguro. A carga não está à vista: procure pistas nos objetos da mesa (clique neles).', 8); }
+      else dica('Local seguro. Ache a carga e lacre (clique nela).', 6);
+    }
+    if (emCena().length) { A.ultEmb = agora; A.posEmb.copy(VC); return; }
+    // emboscadas no caminho: so em deslocamento, fora dos locais, e guardando bandidos para os locais
+    if ((A.depFeito && !A.pista) || A.pistaFeito) return;
+    const prox = A.pista ? LOC[A.pista].alvo : LOC.carga.alvo;
+    if (perto(prox, 30) || perto(LOC.bar.alvo, 26) && !A.barFeito) return;
+    const andou = Math.hypot(VC.x - A.posEmb.x, VC.z - A.posEmb.z);
+    if (agora - A.ultEmb > (A.nEmb ? 11000 : 4000) && andou > (A.nEmb ? 16 : 5) && livres().length - reservaCarga() > 0) {
+      if (!emboscada(Math.min(livres().length - reservaCarga(), Math.random() < .45 ? 2 : 1))) { A.ultEmb = agora - 8000; }      // nenhum ponto bom aqui: tenta de novo logo
+    }
+  }
+  function pistaCarga(k) {                                        // objeto com pista: leva a carga para outro local
+    const v = S.variacao; if (v.missao !== 'carga' || !PISTA[k] || v.carga_local === 'deposito') return null;
+    if (!A.pista) {
+      A.pista = v.carga_local; LOC.pista = LOC[v.carga_local];
+      const L = LOC[A.pista]; marcador.position.copy(PT(L.alvo[0], L.alvo[1], L.alvo[2])); marcador.visible = S.modo === 'treino';
+      setTimeout(() => radio(CEN.radio.carga_pista), 1500); A.ultEmb = performance.now(); A.posEmb.copy(VC);
+    }
+    return PISTA[k][v.carga_local];
+  }
+  function cargaApreendida(k) {
+    const v = S.variacao; if (v.missao !== 'carga' || A.cargaOk || !CARGA[v.carga_local].every(c => A.apreendidos.has(c))) return;
+    A.cargaOk = true; registrar('carga_recuperada'); radio(CEN.radio.carga_ok); status();
+  }
+  function avaliarCarga() {
+    const sol = atacantes().filter(n => n.userData.emCena), caidos = sol.filter(n => n.userData.caido);
+    if (sol.length && caidos.length >= sol.length * .7) registrar('neutralizar_emboscadas');
+    if (!S.graves.some(g => /disparo_injustificado|tiro_com_civis/.test(g.id))) registrar('controle_disparos');
   }
 
   function criarSniper(v) {
@@ -1449,7 +1606,7 @@ export async function iniciar(ctx) {
   }
   function entradaEquipe() {
     if (!A || A.equipeEntrou) return; A.equipeEntrou = true; clearTimeout(A.tEntrada);
-    radio(CEN.radio.sniper_entrada); ataqueLaje();
+    radio(CEN.radio.sniper_entrada); clearTimeout(A.tAtaque); ataqueLaje();
     const dest = { parceiro: [[5.6, 18.6], [8.6, 17.4]], apoio: [[5.0, 19.2], [9.8, 16.9]] };
     let chegaram = 0;
     for (const k of ['parceiro', 'apoio']) { const n = npcs[k]; if (!n) continue; n.userData.base = 'parada'; rota(n, dest[k], 1.9, 'andando', () => { n.userData.base = 'apontando'; animar(n, n.userData.acoes?.apontando ? 'apontando' : 'parada', 1e6, .2); if (++chegaram === 2) reacaoPraca(); }); }
@@ -1484,7 +1641,10 @@ export async function iniciar(ctx) {
       setTimeout(() => radio('Ameaça contida. Equipe no controle da praça.'), 800);
     }
     if (S.variacao.sniper_cena === 'refem' && npcs.vendedor?.userData.ameaca) A.refemVisto = true;
-    const at = atacantes(); if (at.length && !A.atiradoresOk && at.every(n => n.userData.caido || n.userData.rendido)) { A.atiradoresOk = true; registrar('neutralizar_atiradores'); radio('Ciente, atirador. Sem mais disparos contra a laje.'); }
+    if (A.grupoOnda?.length && !A.trocandoOnda && A.grupoOnda.every(n => n.userData.caido || n.userData.saiu)) {
+      if (A.onda < A.ondas.length - 1) { A.trocandoOnda = true; setTimeout(() => { if (A) { A.trocandoOnda = false; proximaOnda(); } }, 6000); }
+      else if (!A.atiradoresOk) { A.atiradoresOk = true; registrar('neutralizar_atiradores'); radio('Ciente, atirador. Sem mais disparos contra a laje.'); }
+    }
   }
   function avaliarSniper() {
     const v = S.variacao, ruins = S.graves.some(g => /disparo_injustificado|tiro_com_civis/.test(g.id));
@@ -1500,12 +1660,14 @@ export async function iniciar(ctx) {
     if (v.missao === 'deposito') return A.entrou && v.deposito_indicios === 'visiveis' ? 'trafico' : 'mandado';
     if (v.missao === 'residencia') return v.morador === 'tranca' ? 'crise' : v.morador === 'recusa' && !A.entrou ? 'mandado' : v.arma_casa === 'fuzil' ? 'posse_16' : 'posse_12';
     if (v.missao === 'bar') return 'trafico';
+    if (v.missao === 'carga') return 'trafico';
     if (v.missao === 'sniper') return v.sniper_cena === 'ninguem' ? 'nenhum' : v.sniper_cena === 'rende' ? 'sem_disparo' : 'disparo_legitimo';
     return v.moto === 'regular' ? 'liberar' : 'adulteracao';
   }
   function decidirFinal() {
     const v = S.variacao, certo = certoEnquadramento();
     if (v.missao === 'sniper') avaliarSniper();
+    if (v.missao === 'carga') avaliarCarga();
     painelOpc('Rádio · encerramento', 'Enquadramento da ocorrência', CEN.dialogos.enquadramento[v.missao], op => {
       A.decidiu = true;
       if (op.id === certo) registrar('enquadramento_correto');
@@ -1550,15 +1712,15 @@ export async function iniciar(ctx) {
     fecharPaineis();
     menu.mostrar({
       tag: 'Treinamento · conteúdo sensível · versão ' + (window.__versao || '?'), titulo: 'Favela · denúncias na comunidade',
-      texto: 'Você é policial militar e, com o parceiro, atende uma denúncia na comunidade: depósito de drogas, arma em residência, ponto de venda no bar ou moto roubada. O destino fica no alto: suba pelas escadarias.\n\n' +
+      texto: 'Duas missões de confronto. Recuperar a carga: suba até o depósito sob emboscadas, passando pelo bar da praça, e siga as pistas até a droga. Sniper: dê cobertura da laje à equipe que entra no bar, sob tiros de lajes e becos.\n\n' +
         'Há cenas de confronto armado, com disparos e sangue em adultos.\n' +
         'Computador: clique fala/usa · T menu · Q saca ou guarda a arma (com ela na mão, o clique dispara) · R recarrega · K checklist.\n' +
         'Quest: gatilho usa/clica · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · Y ou B abre o menu.',
       botoes: [
-        { label: 'Modo história (4 ocorrências guiadas)', acao: () => comecar('historia') },
-        { label: 'Modo treino (objetivos, dicas e destino marcado)', acao: () => comecar('treino') },
-        { label: 'Modo avaliação (sem dicas)', acao: () => comecar('avaliacao') },
+        { label: 'Missão: recuperar a carga (com dicas)', acao: () => comecar('carga') },
         { label: 'Missão de sniper (cobertura da praça, com dicas)', acao: () => comecar('sniper') },
+        { label: 'Modo história (as duas missões em sequência)', acao: () => comecar('historia') },
+        { label: 'Modo avaliação (sorteia uma, sem dicas)', acao: () => comecar('avaliacao') },
         { label: S.voz === false ? 'Voz sintética: desligada (só legendas)' : 'Voz sintética: ligada', acao: () => { S.voz = S.voz === false; aviso(); } },
         { label: 'Cancelar', acao: () => menu.esconder() }
       ]
@@ -1584,7 +1746,7 @@ export async function iniciar(ctx) {
   async function comecar(modo) {
     fecharPaineis();
     Object.assign(S, { historia: modo === 'historia', modo: modo === 'avaliacao' ? 'avaliacao' : 'treino' });
-    const v0 = S.historia ? derivar({ ...sortear(), ...CEN.historia[0].variacao }) : modo === 'sniper' ? derivar({ ...sortear(), missao: 'sniper' }) : sortear();
+    const v0 = S.historia ? derivar({ ...sortear(), ...CEN.historia[0].variacao }) : modo === 'sniper' || modo === 'carga' ? derivar({ ...sortear(), missao: modo }) : sortear();
     window.__som?.carregarFalas?.(['fala_radio', 'fala_parceiro', 'fala_apoio']);      // vozes so agora (na abertura travava o Quest); radio e equipe primeiro
     menu.mostrar({ tag: 'Treinamento', titulo: 'Carregando personagens…', texto: 'Aguarde alguns segundos.', botoes: [] });
     await Promise.race([Promise.all([carregarPapeis(papeisDaMissao(v0).map(k => PAPEL[k][0])), itensProntos]), new Promise(r => setTimeout(r, 40000))]);
@@ -1669,7 +1831,7 @@ export async function iniciar(ctx) {
   }
   function relevante(k, v) {
     const m = v.missao;
-    return ({ suspeito: m !== 'residencia', deposito_indicios: m === 'deposito', morador: m === 'residencia', familia: m === 'residencia', arma_casa: m === 'residencia',
+    return ({ carga_local: m === 'carga', sniper_cena: m === 'sniper', suspeito: !/residencia|carga|sniper/.test(m), deposito_indicios: m === 'deposito', morador: m === 'residencia', familia: m === 'residencia', arma_casa: m === 'residencia',
       frequentador: m === 'bar', moto: m === 'oficina', dono_oficina: m === 'oficina' })[k];
   }
 
@@ -1753,6 +1915,14 @@ export async function iniciar(ctx) {
       if (A.equipeEntrou && !ameacando().length && !A.decidiu) L.push('Encerre pelo rádio: enquadramento (menu)');
       return L.slice(0, 6);
     }
+    if (v.missao === 'carga') {
+      if (emCena().some(n => n.visible)) L.push('Tiros! Abrigue-se, ache o atirador e reaja (sem civil na linha)');
+      if (!A.limpo.deposito) L.push(`Suba até: ${LOC.carga.nome}${S.modo === 'treino' ? ' (coluna âmbar)' : ''}`);
+      else if (!A.cargaOk) L.push(!A.pista ? (v.carga_local === 'deposito' ? 'Ache a carga no depósito e lacre' : 'A carga não está aqui: procure pistas nos objetos da mesa') : !A.limpo.pista ? `Siga a pista até: ${LOC[A.pista].nome}` : 'Ache a carga e lacre');
+      if (A.ferido && !A.socorro) L.push('Peça socorro pelo rádio (menu)');
+      if (A.cargaOk && !A.decidiu) L.push('Encerre pelo rádio: enquadramento (menu)');
+      return L.slice(0, 6);
+    }
     if (!A.chegou) { L.push(`Suba até: ${LOC[v.missao].nome} (coluna âmbar)`); if (!A.eventoFeito) L.push('Atenção às pessoas no caminho'); return L.slice(0, 6); }
     if (v.missao === 'deposito') { if (!A.anunciou) L.push('Observe da porta e anuncie a polícia'); else if (!A.decidiuEntrada) L.push('Decida se pode entrar'); else if (A.entrou) L.push('Apreenda e lacre o material (clique em cada item)'); }
     if (v.missao === 'residencia') { if (!A.anunciou) L.push('Fale com o morador'); else if (A.entrou && armaCasa.visible) L.push('Apreenda a arma no quarto do casal'); if (v.familia === 'mulher_crianca' && !A.familiaFora && A.anunciou) L.push('Tire a mulher e a criança da área de risco'); }
@@ -1797,6 +1967,7 @@ export async function iniciar(ctx) {
       if (!A.chegou && Math.hypot(V.x - L.alvo[0], V.z - L.alvo[2]) < L.raio && Math.abs(V.y - 1.6 - L.alvo[1]) < 4) aoChegar();
       for (const k of ['parceiro', 'apoio']) if (npcs[k] && !npcs[k].userData.equipe) seguir(npcs[k], dt);
       if (v.missao === 'sniper') sniperQuadro();
+      if (v.missao === 'carga') cargaQuadro(agora);
       // crianca no caminho: passar perto dela com a arma na mao, sem antes protege-la, e falha grave
       const cr = npcs.crianca_rua;
       if (cr?.visible && !A.eventoFeito && !A.criancaRisco && S.armaNaMao && V.distanceTo(cr.position) < 4) { A.criancaRisco = true; registrar('crianca_na_linha'); }
@@ -1848,7 +2019,7 @@ export async function iniciar(ctx) {
     apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
     menu: abrirMenu, quadro, estado: S, relatorio, trocarArma, mirar,
     _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,
-      decidirFinal, finalizar, reagir, atacantes, ataqueLaje, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
+      decidirFinal, finalizar, reagir, atacantes, ataqueLaje, proximaOnda, emboscada, defesa, pontoEmboscada, emCena, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
       ocorrencia: () => A, historico: HIST, botoes: () => (dialogo.mesh.visible ? dialogo : menu).botoes, painel: () => (dialogo.mesh.visible ? dialogo : menu.mesh.visible ? menu : null) }
   };
   return window.__trein;

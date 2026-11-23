@@ -43,7 +43,10 @@ B = rep(B, `somTiro(); acenderFlash(clarao); capsula(arma); status(); const rx =
 // a arma do NPC mira o alvo dele (refem, equipe) quando houver; senao, o policial
 B = rep(B, `mao.getWorldPosition(g.position); camera.getWorldPosition(GT);`, `mao.getWorldPosition(g.position); if (n.userData.alvoMira) GT.copy(n.userData.alvoMira); else camera.getWorldPosition(GT);`);
 // chance de acerto do bandido cai com a distancia (atiradores contra a laje do sniper)
-B = rep(B, `if (visto(de, alvo) && Math.random() < .3) return policialAtingido();`, `if (visto(de, alvo) && Math.random() < (de.distanceTo(alvo) > 20 ? .1 : .3)) return policialAtingido();`);
+B = rep(B, `if (visto(de, alvo) && Math.random() < .3) return policialAtingido();`, `if (visto(de, alvo) && Math.random() < (n.userData.acerto ?? (de.distanceTo(alvo) > 20 ? .1 : .3))) return policialAtingido();`);
+// atiradores: cadencia propria; tiro que erra passa estalando perto (e marca a parede), mesmo de longe
+B = rep(B, `u.proxTiro = agora + 1500 + Math.random() * 1300;`, `u.proxTiro = agora + (u.cadencia || 1500) + Math.random() * (u.cadencia ? 800 : 1300);`);
+B = rep(B, `rayG.far = 30; const h = rayG.intersectObjects(ctx.colisao(), false)[0]; if (h?.face) marcar(h);`, `rayG.far = 90; const h = rayG.intersectObjects(ctx.colisao(), false)[0]; if (h?.face) marcar(h); if (!h || h.point.distanceTo(alvo) < 5) estouro(.035, 6500, .32);`);
 // quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
 B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);
@@ -52,7 +55,7 @@ B = rep(B, `        if (n.userData.ameaca) { registrar(k === 'atirador' ? 'respo
 `        if (n.userData.ameaca) {
           registrar('resposta_proporcional', 'disparo');
           // civis perto da linha de tiro (ate pouco depois do alvo): falha grave. Fuzil de precisao: margem estreita e so antes do alvo
-          const civis = Object.values(npcs).filter(c => c !== n && c.visible && !c.userData.caido && !/^(parceiro|apoio)$/.test(c.userData.chave));
+          const civis = Object.values(npcs).filter(c => c !== n && c.visible && !c.userData.caido && !/^(parceiro|apoio)$/.test(c.userData.chave) && !c.userData.ameaca && !c.userData.atacante);
           const o = ray.ray.origin, dd = ray.ray.direction;
           if (civis.some(c => { const p = c.position.clone().setY(c.position.y + 1.1).sub(o); const t = p.dot(dd); const sn = S.armaTipo === 'sniper'; return t > 0 && t < hn.distance + (sn ? 0 : 3) && p.addScaledVector(dd, -t).length() < (sn ? .28 : .8); })) registrar('tiro_com_civis');
           if (ameacando().length <= 1) legenda('Instrutor', 'Agressão armada atual: o disparo foi resposta legítima. Agora, socorro imediato e comunicação.', 6);

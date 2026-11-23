@@ -9,10 +9,7 @@
   },
   "variacoes": {
     "missao": [
-      "deposito",
-      "residencia",
-      "bar",
-      "oficina",
+      "carga",
       "sniper"
     ],
     "evento": [
@@ -61,6 +58,11 @@
       "rende",
       "refem",
       "dois"
+    ],
+    "carga_local": [
+      "deposito",
+      "bar",
+      "oficina"
     ]
   },
   "nomes_variacao": {
@@ -69,7 +71,8 @@
       "residencia": "arma em residência",
       "bar": "ponto de venda no bar da praça",
       "oficina": "moto roubada na oficina",
-      "sniper": "cobertura de sniper na praça do bar"
+      "sniper": "cobertura de sniper na praça do bar",
+      "carga": "recuperar a carga de droga (com emboscadas)"
     },
     "evento": {
       "olheiro": "olheiro com rádio na laje",
@@ -117,6 +120,11 @@
       "rende": "um armado que se rende",
       "refem": "um armado com refém",
       "dois": "dois armados"
+    },
+    "carga_local": {
+      "deposito": "carga no depósito",
+      "bar": "carga levada para o bar da praça",
+      "oficina": "carga levada para a oficina de baixo"
     }
   },
   "fases": [
@@ -128,19 +136,22 @@
           "id": "comunicar_chegada",
           "texto": "Informou a chegada à central pelo rádio",
           "pontos": 4,
-          "base": "Procedimento operacional"
+          "base": "Procedimento operacional",
+          "condicao": "variacao.missao != 'sniper'"
         },
         {
           "id": "combinar_parceiro",
           "texto": "Combinou com o parceiro um deslocamento com cobertura",
           "pontos": 4,
-          "base": "Técnica de patrulha"
+          "base": "Técnica de patrulha",
+          "condicao": "variacao.missao != 'carga' && variacao.missao != 'sniper'"
         },
         {
           "id": "evento_ok",
           "texto": "Agiu certo no evento do caminho (sem abordar quem não ameaça; protegeu a criança)",
           "pontos": 6,
-          "base": "CPP art. 244 · ECA art. 18 · ADPF 635"
+          "base": "CPP art. 244 · ECA art. 18 · ADPF 635",
+          "condicao": "variacao.missao != 'carga' && variacao.missao != 'sniper'"
         },
         {
           "id": "relatorio_visual",
@@ -148,6 +159,13 @@
           "pontos": 8,
           "base": "Observação e comunicação (atirador de cobertura)",
           "condicao": "variacao.missao == 'sniper'"
+        },
+        {
+          "id": "seguir_pista",
+          "texto": "Achou a pista no depósito e seguiu até o local da carga",
+          "pontos": 10,
+          "base": "Investigação no local · CPP art. 6º",
+          "condicao": "variacao.missao == 'carga' && variacao.carga_local != 'deposito'"
         }
       ],
       "erros": [
@@ -191,14 +209,15 @@
           "id": "identificar_se",
           "texto": "Identificou-se e explicou o motivo",
           "pontos": 5,
-          "base": "Lei 13.869/2019 · procedimento"
+          "base": "Lei 13.869/2019 · procedimento",
+          "condicao": "variacao.missao != 'carga' && variacao.missao != 'sniper'"
         },
         {
           "id": "entrada_flagrante",
           "texto": "Entrou no depósito com o material à vista (flagrante)",
           "pontos": 10,
           "base": "CF art. 5º, XI · STF RE 603.616 (Tema 280)",
-          "condicao": "variacao.missao == 'deposito' && variacao.deposito_indicios == 'visiveis'",
+          "condicao": "variacao.missao == 'deposito' && variacao.deposito_indicios == 'visiveis' || variacao.missao == 'carga'",
           "validar": true
         },
         {
@@ -286,7 +305,8 @@
           "texto": "Deu ordem verbal clara antes de qualquer outra reação",
           "pontos": 8,
           "base": "Lei 13.060/2014 · Portaria Interministerial 4.226/2010",
-          "validar": true
+          "validar": true,
+          "condicao": "variacao.missao != 'carga' && variacao.missao != 'sniper'"
         },
         {
           "id": "resposta_proporcional",
@@ -299,7 +319,8 @@
           "id": "algemas_justificadas",
           "texto": "Usou algemas só por resistência, fuga ou perigo, e justificou",
           "pontos": 5,
-          "base": "Súmula Vinculante 11"
+          "base": "Súmula Vinculante 11",
+          "condicao": "variacao.missao != 'carga' && variacao.missao != 'sniper'"
         },
         {
           "id": "socorro",
@@ -329,6 +350,20 @@
           "pontos": 10,
           "base": "CP art. 25 (legítima defesa própria)",
           "condicao": "variacao.missao == 'sniper'"
+        },
+        {
+          "id": "neutralizar_emboscadas",
+          "texto": "Neutralizou a maioria dos atiradores das emboscadas, abrigado",
+          "pontos": 12,
+          "base": "CP art. 25 (legítima defesa) · técnica de progressão sob fogo",
+          "condicao": "variacao.missao == 'carga'"
+        },
+        {
+          "id": "controle_disparos",
+          "texto": "Nenhum disparo contra civil ou pessoa desarmada",
+          "pontos": 10,
+          "base": "Portaria Interministerial 4.226/2010 · ADPF 635",
+          "condicao": "variacao.missao == 'carga'"
         }
       ],
       "erros": [
@@ -393,15 +428,22 @@
           "texto": "Descarregou e lacrou a arma sem apontá-la para ninguém",
           "pontos": 6,
           "base": "Segurança no manuseio · CPP art. 158-B",
-          "condicao": "variacao.missao == 'residencia' || variacao.suspeito != 'rende'"
+          "condicao": "variacao.missao == 'residencia' && variacao.missao != 'carga' && variacao.missao != 'sniper' || variacao.suspeito != 'rende' && variacao.missao != 'carga' && variacao.missao != 'sniper'"
         },
         {
           "id": "celular_sem_acessar",
           "texto": "Apreendeu o celular sem acessar o conteúdo",
           "pontos": 5,
           "base": "CF art. 5º, XII · STF/STJ (acesso exige ordem judicial)",
-          "condicao": "variacao.missao == 'deposito' || variacao.missao == 'bar' || variacao.missao == 'oficina'",
+          "condicao": "variacao.missao == 'deposito' || variacao.missao == 'bar' || variacao.missao == 'oficina' || variacao.missao == 'carga' && variacao.carga_local == 'deposito'",
           "validar": true
+        },
+        {
+          "id": "carga_recuperada",
+          "texto": "Recuperou e lacrou a carga",
+          "pontos": 14,
+          "base": "CPP art. 158-A (cadeia de custódia)",
+          "condicao": "variacao.missao == 'carga'"
         }
       ],
       "erros": [
@@ -464,14 +506,19 @@
     "sniper_inicio": "Atirador, aqui é a central. Você está na laje, de cobertura para a equipe que vai entrar no bar da praça. Observe pela luneta e informe o que vê antes da entrada.",
     "sniper_entrada": "Equipe entrando na praça agora.",
     "sniper_atingido": "Policial atingido! Policial atingido na praça!",
-    "sniper_ataque": "Atirador, tiros contra a sua posição! Abrigue-se e localize de onde vêm."
+    "sniper_ataque": "Atirador, tiros contra a sua posição! Abrigue-se e localize de onde vêm.",
+    "carga_bar": "Guarnição, disparos na praça do bar! Abriguem-se e protejam os civis.",
+    "carga_pista": "Ciente. Sigam a pista com cautela: esperem resistência armada no local.",
+    "carga_ok": "Ciente, carga recuperada. Preservem o local para a perícia e encerrem a ocorrência.",
+    "sniper_onda": "Atirador, novos disparos contra a laje, de outra posição!"
   },
   "denuncias": {
     "deposito": "estão guardando droga no térreo da casa de esquina da escadaria grande, lá no alto.",
     "residencia": "o morador da casa da escadaria, lá no alto, guarda uma arma em casa.",
     "bar": "estão vendendo droga no balcão do bar da praça.",
     "oficina": "estão desmontando moto roubada na oficina do caminho de baixo.",
-    "sniper": "homem armado no balcão do bar da praça; a equipe vai entrar e você dá cobertura da laje."
+    "sniper": "homem armado no balcão do bar da praça; a equipe vai entrar e você dá cobertura da laje.",
+    "carga": "uma carga grande de droga chegou ao depósito da escadaria grande, lá no alto, guardada por homens armados de fuzil. Esperem tiros no caminho."
   },
   "dialogos": {
     "parceiro": [
@@ -732,6 +779,20 @@
           "id": "nenhum",
           "fala": "Ninguém armado: abordagem e liberação, sem prisão"
         }
+      ],
+      "carga": [
+        {
+          "id": "trafico",
+          "fala": "Tráfico de drogas (Lei 11.343/2006, art. 33) e resistência armada contra a guarnição: apreensão com cadeia de custódia, socorro aos feridos e perícia nos locais dos confrontos"
+        },
+        {
+          "id": "so_trafico",
+          "fala": "Só o tráfico: os confrontos não precisam constar do registro"
+        },
+        {
+          "id": "nada",
+          "fala": "Só recolher a carga para a viatura, sem registro dos disparos"
+        }
       ]
     },
     "relatorio_sniper": [
@@ -783,44 +844,19 @@
   },
   "historia": [
     {
-      "titulo": "1 · Bar da praça",
-      "texto": "Denúncia de venda no balcão do bar. Há frequentadores nas mesas.",
+      "titulo": "1 · Recuperar a carga",
+      "texto": "Denúncia: carga de droga no depósito do alto, guardada por homens armados. Vai ter tiro no caminho.",
       "variacao": {
-        "missao": "bar",
-        "evento": "moradora",
-        "suspeito": "rende",
-        "frequentador": "usuario"
+        "missao": "carga",
+        "carga_local": "bar"
       }
     },
     {
-      "titulo": "2 · Depósito na escadaria",
-      "texto": "Denúncia de droga guardada num térreo.",
+      "titulo": "2 · Cobertura de sniper",
+      "texto": "Da laje, você cobre a equipe que entra no bar da praça. Atiradores vão mirar em você.",
       "variacao": {
-        "missao": "deposito",
-        "evento": "olheiro",
-        "suspeito": "foge",
-        "deposito_indicios": "visiveis"
-      }
-    },
-    {
-      "titulo": "3 · Arma em casa",
-      "texto": "Denúncia de arma guardada numa residência.",
-      "variacao": {
-        "missao": "residencia",
-        "evento": "crianca",
-        "morador": "recusa",
-        "familia": "mulher_crianca",
-        "arma_casa": "revolver"
-      }
-    },
-    {
-      "titulo": "4 · Oficina",
-      "texto": "Denúncia de moto roubada.",
-      "variacao": {
-        "missao": "oficina",
-        "evento": "moradora",
-        "moto": "regular",
-        "dono_oficina": "apresenta"
+        "missao": "sniper",
+        "sniper_cena": "refem"
       }
     }
   ],
@@ -867,6 +903,12 @@
         "personagem": "Sala de operações (rádio)",
         "quando": "Rádio: denúncia oficina",
         "texto": "Guarnição, Disque-Denúncia: estão desmontando moto roubada na oficina do caminho de baixo. Verifiquem com cautela. Há escola e posto de saúde na comunidade."
+      },
+      {
+        "arquivo": "fala_radio_20",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: denúncia carga",
+        "texto": "Guarnição, Disque-Denúncia: uma carga grande de droga chegou ao depósito da escadaria grande, lá no alto, guardada por homens armados de fuzil. Esperem tiros no caminho. Verifiquem com cautela. Há escola e posto de saúde na comunidade."
       },
       {
         "arquivo": "fala_radio_05",
@@ -927,6 +969,30 @@
         "personagem": "Sala de operações (rádio)",
         "quando": "Rádio: sniper_ataque",
         "texto": "Atirador, tiros contra a sua posição! Abrigue-se e localize de onde vêm."
+      },
+      {
+        "arquivo": "fala_radio_21",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: carga_bar",
+        "texto": "Guarnição, disparos na praça do bar! Abriguem-se e protejam os civis."
+      },
+      {
+        "arquivo": "fala_radio_22",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: carga_pista",
+        "texto": "Ciente. Sigam a pista com cautela: esperem resistência armada no local."
+      },
+      {
+        "arquivo": "fala_radio_23",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: carga_ok",
+        "texto": "Ciente, carga recuperada. Preservem o local para a perícia e encerrem a ocorrência."
+      },
+      {
+        "arquivo": "fala_radio_24",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper_onda",
+        "texto": "Atirador, novos disparos contra a laje, de outra posição!"
       },
       {
         "arquivo": "fala_radio_11",
