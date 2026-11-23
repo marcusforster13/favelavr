@@ -32,6 +32,9 @@ B = rep(B, `if (u.sentado) { u.sentado = false; n.position.y = .15; }`, `if (u.s
 B = rep(B, `    const g = chave === 'seguranca_2' ? armaSolta2 : chave === 'atirador' ? armaSolta3 : armaSolta;
     g.position.set(p.x + .35, .17, p.z + .2);`, `    const g = chave === 'vendedor' ? armaSolta2 : chave === 'morador' ? armaSolta3 : armaSolta;
     g.position.set(p.x + .35, p.y + .02, p.z + .2);`);
+// carregador muda com a arma do policial (pistola 15, fuzil 30); ao sacar, a posicao depende da arma
+B = rep(B, `const CARREGADOR = 15, MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();`, `let CARREGADOR = 15; const MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();`);
+B = rep(B, `arma.visible = on; mostrarControle('right', !on); status();`, `arma.visible = on; mostrarArmaPolicial(); mostrarControle('right', !on); status();`);
 // quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
 B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);

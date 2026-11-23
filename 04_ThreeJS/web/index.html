@@ -57,7 +57,8 @@
     <dt>N · V</dt><dd>colisão liga/desliga · voar (sem gravidade)</dd>
     <dt>Clique</dt><dd>falar · usar · escolher nos painéis</dd>
     <dt>T · K · Q · R</dt><dd>menu · checklist · sacar/guardar a arma (clique dispara) · recarregar</dd>
-    <dt>VR</dt><dd>analógico esquerdo anda, direito gira · gatilho usa ou teleporta · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · Y ou B abre o menu</dd>
+    <dt>1 · 2 · botão direito</dt><dd>pistola · fuzil · mirar (no fuzil, pela luneta; Z também)</dd>
+    <dt>VR</dt><dd>analógico esquerdo anda, direito gira · gatilho usa ou teleporta · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · X troca pistola/fuzil (no fuzil, leve-o ao olho para olhar pela luneta) · Y ou B abre o menu</dd>
   </dl>
   <label>Brilho <input id="exp" type="range" min="0.5" max="1.6" step="0.02" value="1"></label>
   <div class="row" id="acoes"><button id="bMin" type="button">Recolher</button></div>
@@ -87,7 +88,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = id => document.getElementById(id);
-const VERSAO = '1123-1111';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+const VERSAO = '1123-1124';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
 window.__versao = VERSAO; window.__arq = {};
 const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
 $('versao').textContent = 'versão ' + VERSAO;
@@ -197,13 +198,16 @@ const mar = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI 
       #include <fog_fragment>
     }`
 }));
+// diagnostico de desempenho: ?sem=mar,arvores,som,trein desliga partes; ?fps=1 mostra o contador (tela e VR)
+const SEM = new Set((PARAM.get('sem') || '').split(',').filter(Boolean));
+if (SEM.has('mar')) mar.material = new THREE.MeshBasicMaterial({ color: 0x1d5c72, fog: true });      // agua lisa, sem shader
 mar.position.y = NIVEL_MAR; mar.frustumCulled = false; scene.add(mar);
 new THREE.TextureLoader().load(H('mar/normais.png'), t => {      // gerado por ferramentas/gerar_normais_mar.mjs
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; mar.material.uniforms.uNormais.value = t;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (mar.material.uniforms) mar.material.uniforms.uNormais.value = t;
 });
 
 /* ---------- arvores: dois planos cruzados com a imagem renderizada no Blender ---------- */
-{
+if (!SEM.has('arvores')) {
   const tex = await new THREE.TextureLoader().loadAsync(H('arvores/arvores.png'));
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   const N = ARV.modelos;
@@ -285,7 +289,7 @@ Promise.all([1, 2, 3].map(() => trabalhar(filaLonge))).then(() => { console.log(
    Guarda a altura do chao de NIVEL-15 a NIVEL+5 m em 8 bits (8 cm de precisao), 1024 px sobre a ilha (~40 cm/px). */
 function mapaAltura() {
   const ter = SETORES.setores.filter(s => /Terreno|Pedras/.test(s.id));
-  if (!ter.length) return;
+  if (!ter.length || !mar.material.uniforms) return;                       // ?sem=mar: agua lisa, sem raso
   const M = 10, x0 = Math.min(...ter.map(s => s.min[0])) - M, x1 = Math.max(...ter.map(s => s.max[0])) + M;
   const z0 = Math.min(...ter.map(s => s.min[2])) - M, z1 = Math.max(...ter.map(s => s.max[2])) + M;
   const sx = x1 - x0, sz = z1 - z0;
@@ -474,14 +478,41 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 
 /* ---------- loop ---------- */
 const clock = new THREE.Clock();
+/* contador de desempenho (?fps=1): quadros por segundo, pior quadro e quanto cada parte gasta do processador.
+   Aparece no canto da tela e, no VR, preso a vista (embaixo, a esquerda). */
+const FPS = PARAM.has('fps') ? (() => {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 150; const g = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const pl = new THREE.Mesh(new THREE.PlaneGeometry(.34, .1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, fog: false, toneMapped: false }));
+  pl.position.set(-.16, -.2, -.6); pl.renderOrder = 2000; camera.add(pl);
+  const el = document.createElement('div'); Object.assign(el.style, { position: 'fixed', left: '16px', bottom: '70px', zIndex: 9, font: '12px/1.4 Consolas,monospace', color: '#9fd49a', background: 'rgba(0,0,0,.7)', padding: '6px 10px', whiteSpace: 'pre' }); document.body.appendChild(el);
+  const soma = { n: 0, max: 0, t0: performance.now(), mov: 0, tr: 0, som: 0, ren: 0 }; let ult = performance.now();
+  return {
+    m: (k, ms) => { soma[k] += ms; },
+    quadro() {
+      const ag = performance.now(), d = ag - ult; ult = ag; soma.n++; if (d > soma.max) soma.max = d;
+      if (ag - soma.t0 < 500) return;
+      const s = (ag - soma.t0) / 1000, f = n => (soma[n] / soma.n).toFixed(1);
+      const txt = `${Math.round(soma.n / s)} fps  pior ${soma.max.toFixed(0)} ms\nandar ${f('mov')}  trein ${f('tr')}  som ${f('som')}  desenho ${f('ren')} ms\n${renderer.info.render.calls} chamadas  ${(renderer.info.render.triangles / 1e6).toFixed(2)} mi tri`;
+      el.textContent = txt;
+      g.clearRect(0, 0, 512, 150); g.fillStyle = 'rgba(0,0,0,.75)'; g.fillRect(0, 0, 512, 150); g.fillStyle = soma.n / s < 65 ? '#ff8a6a' : '#9fd49a'; g.font = '26px Consolas, monospace';
+      txt.split('\n').forEach((l, i) => g.fillText(l, 12, 36 + i * 42)); tex.needsUpdate = true;
+      Object.assign(soma, { n: 0, max: 0, t0: ag, mov: 0, tr: 0, som: 0, ren: 0 });
+    }
+  };
+})() : null;
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), .05);
+  let t = performance.now();
   if (renderer.xr.isPresenting) vrMove(dt);
   else { desktopMove(dt); rig.rotation.y = yaw; camera.rotation.set(pitch, 0, 0); }
+  if (FPS) { FPS.m('mov', performance.now() - t); t = performance.now(); }
   camera.getWorldPosition(V1); ceu.position.copy(V1);
-  mar.material.uniforms.uTempo.value = clock.elapsedTime;
-  window.__trein?.quadro(); window.__som?.quadro(dt);
+  if (mar.material.uniforms) mar.material.uniforms.uTempo.value = clock.elapsedTime;
+  window.__trein?.quadro(); if (FPS) { FPS.m('tr', performance.now() - t); t = performance.now(); }
+  window.__som?.quadro(dt); if (FPS) { FPS.m('som', performance.now() - t); t = performance.now(); }
   renderer.render(scene, camera);
+  if (FPS) { FPS.m('ren', performance.now() - t); FPS.quadro(); }
 });
 
 /* altura do chao em (x, z), procurando de yRef+1,2 m para baixo (para personagens e objetos); null se nao achar */
@@ -495,9 +526,9 @@ function alturaChao(x, z, yRef = 60, acima = 1.2) {
 window.__favela.alturaChao = alturaChao;
 
 /* ---------- sons e motor do treinamento ---------- */
-import('./' + H('audio.js')).then(m => m.iniciarAudio({ scene, camera, renderer })).catch(e => console.warn('Áudio não carregou:', e));
+if (!SEM.has('som')) import('./' + H('audio.js')).then(m => m.iniciarAudio({ scene, camera, renderer })).catch(e => console.warn('Áudio não carregou:', e));
 const iluminar = m => { if (m.metalness > .25) m.metalness = .25; m.envMapIntensity = 0; return m; };
-import('./' + H('treinamento.js')).then(m => m.iniciar({
+if (!SEM.has('trein')) import('./' + H('treinamento.js')).then(m => m.iniciar({
   scene, camera, rig, renderer, controles, grips, iluminar, alturaChao, pousar, loaderGLB: loader,
   colisao: () => alvosCol, malhas: () => malhas,
   setYaw: y => { yaw = y; pitch = 0; }, setLanterna: () => { }, lanternaLigada: () => false

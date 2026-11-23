@@ -526,7 +526,7 @@ export async function iniciar(ctx) {
     const pai = renderer.xr.isPresenting ? (controle('right') || ctx.controles?.[0] || camera) : camera;
     pai.add(arma);
     if (pai === camera) { arma.position.set(.17, -.13, -.38); arma.rotation.set(0, 0, 0); } else { arma.position.set(0, 0, -.02); arma.rotation.set(0, 0, 0); }      // no Quest o cano coincide com o raio do controle
-    arma.visible = on; mostrarControle('right', !on); status();
+    arma.visible = on; mostrarArmaPolicial(); mostrarControle('right', !on); status();
   }
   // no Quest, o modelo do controle some enquanto a mao segura a arma ou a granada
   function mostrarControle(mao, visivel) {
@@ -564,7 +564,7 @@ export async function iniciar(ctx) {
     m.position.copy(h.point).addScaledVector(n, .004); m.lookAt(h.point.clone().add(n)); scene.add(m); marcas.push(m);
   }
   let ultimoTiro = 0;
-  const CARREGADOR = 15, MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();
+  let CARREGADOR = 15; const MIRA = new THREE.Vector3(), BOCA = new THREE.Vector3();
   function recarregar() {
     if (S.recarregando || !S.armaNaMao || (S.municao ?? CARREGADOR) >= CARREGADOR) return;
     S.recarregando = true; status();
@@ -894,6 +894,92 @@ export async function iniciar(ctx) {
     }
   }
 
+  /* ---- mira tipo luneta (sniper) no fuzil do policial ----
+     Quest: a lente da luneta mostra a imagem ampliada (uma camera estreita alinhada ao cano, desenhada numa textura so
+     quando o fuzil esta na mao). Computador: botao direito (ou Z) olha pela luneta: aproxima, mostra a cruz e o clique
+     atira no centro. Com a pistola, o mesmo botao so aproxima um pouco. */
+  const luneta = new THREE.Group(); luneta.visible = false;
+  const rtMira = new THREE.WebGLRenderTarget(320, 320);
+  const camMira = new THREE.PerspectiveCamera(5, 1, .1, 900);
+  {
+    const metal = ctx.iluminar(new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: .45, metalness: .25 }));
+    const tubo = new THREE.Mesh(new THREE.CylinderGeometry(.019, .019, .2, 20, 1, true).rotateX(Math.PI / 2), metal);
+    const ocular = new THREE.Mesh(new THREE.CylinderGeometry(.024, .021, .05, 20, 1, true).rotateX(Math.PI / 2), metal); ocular.position.z = .11;
+    const objetiva = new THREE.Mesh(new THREE.CylinderGeometry(.026, .02, .05, 20, 1, true).rotateX(Math.PI / 2), metal); objetiva.position.z = -.11;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(.012, .03, .12), metal); base.position.set(0, -.03, 0);
+    // lente: imagem ampliada + cruz e bordas escuras (desenhadas por cima no proprio shader)
+    const lente = new THREE.Mesh(new THREE.CircleGeometry(.022, 32), new THREE.ShaderMaterial({
+      uniforms: { mapa: { value: rtMira.texture } }, fog: false,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D mapa; varying vec2 vUv;
+        void main(){ vec2 p = vUv - .5; float r = length(p);
+          vec3 c = texture2D(mapa, vUv).rgb * smoothstep(.5, .36, r);                       // borda escura do tubo
+          float cruz = (step(abs(p.x), .004) + step(abs(p.y), .004)) * step(.06, r) * step(r, .42);   // cruz (com o centro livre)
+          float ponto = step(r, .012);
+          c = mix(c, vec3(0.), clamp(cruz + ponto, 0., 1.));
+          gl_FragColor = vec4(c, 1.);
+          #include <colorspace_fragment>
+        }`
+    }));
+    lente.position.z = .136; lente.rotation.y = 0;                // olhando para tras (para o olho de quem segura)
+    luneta.add(tubo, ocular, objetiva, base, lente);
+    camMira.position.set(0, 0, -.14); luneta.add(camMira);           // a camera olha para -Z, junto com o cano
+    luneta.userData.lente = lente;
+  }
+  luneta.position.set(0, .115, .02);                                 // sobre o trilho do fuzil, alinhada ao eixo do cano
+  arma.add(luneta);
+  let mirando = false, fovNormal = camera.fov;
+  const mira = document.createElement('div');
+  Object.assign(mira.style, { position: 'fixed', inset: 0, zIndex: 4, pointerEvents: 'none', display: 'none',
+    background: 'radial-gradient(circle at 50% 50%, transparent 0 34vh, #000 34.5vh)' });
+  mira.innerHTML = '<div style="position:absolute;left:50%;top:16vh;bottom:16vh;width:2px;margin-left:-1px;background:#000"></div><div style="position:absolute;top:50%;left:calc(50% - 34vh);right:calc(50% - 34vh);height:2px;margin-top:-1px;background:#000"></div><div style="position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#c00"></div>';
+  document.body.appendChild(mira);
+  const pontoPistola = document.createElement('div');
+  Object.assign(pontoPistola.style, { position: 'fixed', left: '50%', top: '50%', width: '6px', height: '6px', margin: '-3px', borderRadius: '50%', background: '#f33', zIndex: 4, pointerEvents: 'none', display: 'none' });
+  document.body.appendChild(pontoPistola);
+  function mirar(on) {
+    if (renderer.xr.isPresenting) return;                           // no Quest a luneta e olhar pela lente
+    if (on && !S.armaNaMao) sacar(true);
+    mirando = on && S.armaNaMao;
+    const luneta_ = mirando && S.armaTipo === 'fuzil';
+    camera.fov = mirando ? (luneta_ ? 9 : 45) : fovNormal; camera.updateProjectionMatrix();
+    mira.style.display = luneta_ ? 'block' : 'none'; pontoPistola.style.display = mirando && !luneta_ ? 'block' : 'none';
+    arma.visible = S.armaNaMao && !luneta_;
+  }
+  function renderizarMira() {
+    const ver = S.armaNaMao && S.armaTipo === 'fuzil' && renderer.xr.isPresenting;
+    luneta.visible = S.armaTipo === 'fuzil';
+    if (!ver) return;
+    const xr = renderer.xr.enabled, ant = renderer.getRenderTarget();
+    luneta.userData.lente.visible = false;
+    renderer.xr.enabled = false; renderer.setRenderTarget(rtMira); renderer.render(scene, camMira);
+    renderer.setRenderTarget(ant); renderer.xr.enabled = xr;
+    luneta.userData.lente.visible = true;
+  }
+  addEventListener('contextmenu', e => { if (e.target === renderer.domElement) e.preventDefault(); });
+  renderer.domElement.addEventListener('pointerdown', e => { if (e.button === 2) mirar(true); });
+  addEventListener('pointerup', e => { if (e.button === 2) mirar(false); });
+
+  /* ---- armas do policial: pistola (modelos/arma.glb) e fuzil do autor; X (Quest), 1/2 ou X (computador) troca ---- */
+  const CAP = { pistola: 15, fuzil: 30 }, MUN = { pistola: 15, fuzil: 30 };
+  S.armaTipo = 'pistola';
+  gl.loadAsync(HQ('modelos/fuzil.glb')).then(g => { const m = prep(g.scene.clone()); m.userData.tipo = 'fuzil'; arma.add(m); mostrarArmaPolicial(); }).catch(() => { });
+  function mostrarArmaPolicial() {
+    const f = S.armaTipo === 'fuzil';
+    for (const c of arma.children) if (c !== clarao && c !== luneta) c.visible = f ? c.userData.tipo === 'fuzil' : !c.userData.tipo;
+    luneta.visible = f;
+    clarao.position.z = f ? -.71 : -.2;                          // clarao na boca de cada arma
+    if (arma.parent === camera) arma.position.set(f ? .16 : .17, f ? -.2 : -.13, f ? -.28 : -.38);
+  }
+  function trocarArma(tipo) {
+    if (S.recarregando) return;
+    const novo = tipo || (S.armaTipo === 'pistola' ? 'fuzil' : 'pistola'); if (novo === S.armaTipo) { if (!S.armaNaMao) sacar(true); return; }
+    MUN[S.armaTipo] = S.municao ?? CAP[S.armaTipo];
+    S.armaTipo = novo; CARREGADOR = CAP[novo]; S.municao = MUN[novo];
+    if (mirando) mirar(false); sacar(true); window.__som?.tocar('recarregar_pistola', null, false, { vol: .25 });
+    legenda('Equipamento', novo === 'fuzil' ? `Fuzil na mão (${S.municao}/30).` : `Pistola na mão (${S.municao}/15).`, 2); status();
+  }
+
   // marcador do destino (modo treino): coluna de luz ambar que se ve de longe
   const marcador = new THREE.Group(); marcador.visible = false; scene.add(marcador);
   {
@@ -1045,7 +1131,7 @@ export async function iniciar(ctx) {
 
   /* ================= fluxo da ocorrencia ================= */
   function novaOcorrencia(v, cap) {
-    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
+    S.variacao = v; S.variacao.suspeitoChave = SUSPEITO[v.missao]; S.feitos = new Map(); S.granadas = 0; S.vida = 3; MUN.pistola = CAP.pistola; MUN.fuzil = CAP.fuzil; CARREGADOR = CAP[S.armaTipo]; S.municao = CARREGADOR; S.recarregando = false; limparSangue();
     A = { n: HIST.length + 1, fase: 'chegada', titulo: cap?.titulo || `Ocorrência ${HIST.length + 1} · ${CEN.nomes_variacao.missao[v.missao]}`, apreendidos: new Set() };
     criarNPCs(v); sacar(false);
     for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
@@ -1333,7 +1419,8 @@ export async function iniciar(ctx) {
     if (A?.chegou && !A.decidiu) b.push({ label: 'Rádio: enquadramento e condução (encerrar a ocorrência)', acao: decidirFinal });
     if (susp?.userData.fugindo) b.unshift({ label: 'Ordenar: "Parado! Polícia!"', acao: () => { menu.esconder(); ordemVerbal(susp); } });
     if (S.armaNaMao) b.push({ label: `Recarregar a arma (${S.municao ?? CARREGADOR}/${CARREGADOR})`, acao: () => { menu.esconder(); recarregar(); } });
-    b.push({ label: S.armaNaMao ? 'Guardar a arma no coldre' : 'Sacar a arma', acao: () => { sacar(!S.armaNaMao); menu.esconder(); } },
+    b.push({ label: S.armaNaMao ? 'Guardar a arma' : 'Sacar a arma', acao: () => { sacar(!S.armaNaMao); menu.esconder(); } },
+      { label: S.armaTipo === 'fuzil' ? 'Trocar para a pistola' : 'Trocar para o fuzil', acao: () => { menu.esconder(); trocarArma(); } },
       { label: 'Checklist desta ocorrência', acao: abrirChecklist },
       { label: 'Encerrar e ver o relatório', cor: 'rgba(240,80,64,.22)', acao: encerrar },
       { label: 'Fechar', acao: () => menu.esconder() });
@@ -1411,6 +1498,7 @@ export async function iniciar(ctx) {
   /* ================= clique / gatilho ================= */
   const npcVisiveis = () => Object.values(npcs).filter(n => n.visible);
   function usar(ray, c) {
+    if (mirando && !c) ray.setFromCamera(new THREE.Vector2(0, 0), camera);      // olhando pela luneta: o tiro vai para o centro
     for (const p of paineis) if (p.clique(ray)) return true;
     if (S.armaNaMao && (!c || c.userData.mao !== 'left')) {
       // com a arma na mao, clicar em quem foge (ou ameaca) da a ordem verbal primeiro; o segundo clique dispara
@@ -1454,7 +1542,7 @@ export async function iniciar(ctx) {
     }
     return false;
   }
-  function botao(mao) { if (mao === 'right') sacar(!S.armaNaMao); }
+  function botao(mao) { if (mao === 'right') sacar(!S.armaNaMao); else trocarArma(); }
 
   /* ================= objetivos (modo treino) e status ================= */
   function objetivos() {
@@ -1479,7 +1567,7 @@ export async function iniciar(ctx) {
   function status() {
     const el = document.getElementById('statusTrein'); if (!el) return;
     el.hidden = !S.ativo || S.modo === 'treino';
-    el.innerHTML = `<b>${A ? A.titulo : 'Favela'}</b> · ${fmt(tempo())}<br>Na mão: ${S.armaNaMao ? (S.recarregando ? 'arma (recarregando…)' : `arma · ${S.municao ?? CARREGADOR}/${CARREGADOR}`) : 'nada'}`;
+    el.innerHTML = `<b>${A ? A.titulo : 'Favela'}</b> · ${fmt(tempo())}<br>Na mão: ${S.armaNaMao ? (S.recarregando ? S.armaTipo + ' (recarregando…)' : `${S.armaTipo} · ${S.municao ?? CARREGADOR}/${CARREGADOR}`) : 'nada'}`;
     mostrarObjetivos();
   }
 
@@ -1532,6 +1620,7 @@ export async function iniciar(ctx) {
     }
     poseFuzil();                                                // fuzil: arma no ombro e bracos por IK (depois da animacao)
     seguirArmaNPC();
+    renderizarMira();
     if (S.ativo && Math.floor(agora / 1000) !== Math.floor((agora - dt * 1000) / 1000)) status();
   }
 
@@ -1542,6 +1631,10 @@ export async function iniciar(ctx) {
     if (e.code === 'KeyK' && S.ativo) abrirChecklist();
     if (e.code === 'KeyQ' && !e.shiftKey) sacar(!S.armaNaMao);
     if (e.code === 'KeyR') recarregar();
+    if (e.code === 'Digit1') trocarArma('pistola');
+    if (e.code === 'Digit2') trocarArma('fuzil');
+    if (e.code === 'KeyX') trocarArma();
+    if (e.code === 'KeyZ') mirar(!mirando);
   });
   const bt = document.createElement('button'); bt.type = 'button'; bt.textContent = 'Iniciar treinamento'; bt.id = 'bTrein';
   bt.onclick = aviso; document.getElementById('acoes')?.prepend(bt);
@@ -1549,9 +1642,9 @@ export async function iniciar(ctx) {
   window.__trein = {
     clique: ray => usar(ray), gatilho: (ray, c) => usar(ray, c), botao, recarregar, soltar,
     apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
-    menu: abrirMenu, quadro, estado: S, relatorio,
+    menu: abrirMenu, quadro, estado: S, relatorio, trocarArma, mirar,
     _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,
-      decidirFinal, finalizar, reagir, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
+      decidirFinal, finalizar, reagir, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
       ocorrencia: () => A, historico: HIST, botoes: () => (dialogo.mesh.visible ? dialogo : menu).botoes, painel: () => (dialogo.mesh.visible ? dialogo : menu.mesh.visible ? menu : null) }
   };
   return window.__trein;
