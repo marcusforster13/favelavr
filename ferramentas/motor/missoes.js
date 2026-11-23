@@ -177,7 +177,7 @@
     if (on && !S.armaNaMao) sacar(true);
     mirando = on && S.armaNaMao;
     const luneta_ = mirando && S.armaTipo === 'sniper';                // luneta so no fuzil de precisao
-    camera.fov = mirando ? (luneta_ ? 3.2 : S.armaTipo === 'fuzil' ? 38 : 45) : fovNormal; camera.updateProjectionMatrix();
+    camera.fov = mirando ? (luneta_ ? 6 : S.armaTipo === 'fuzil' ? 38 : 45) : fovNormal; camera.updateProjectionMatrix();
     mira.style.display = luneta_ ? 'block' : 'none'; pontoPistola.style.display = mirando && !luneta_ ? 'block' : 'none';
     arma.visible = S.armaNaMao && !luneta_;
   }
@@ -250,7 +250,7 @@
   const POS_ARMA = {
     pistola: { boca: -.2, tela: [.17, -.13, -.38] },
     fuzil: { boca: -.71, tela: [.16, -.2, -.28] },                   // sem luneta (pedido do autor): mira leve
-    sniper: { boca: -.84, tela: [.15, -.21, -.24], luneta: [0, .091, -.105], fov: 2, raio: .95, tubo: false }      // lente na ocular da luneta do modelo (z = 0,03)
+    sniper: { boca: -.84, tela: [.15, -.21, -.24], luneta: [0, .091, -.105], fov: 3.5, raio: .95, tubo: false }      // lente na ocular da luneta do modelo (z = 0,03)
   };
   S.armaTipo = 'pistola';
   for (const tipo of ['fuzil', 'sniper']) gl.loadAsync(HQ('modelos/' + tipo + '.glb')).then(g => { const m = prep(g.scene.clone()); m.userData.tipo = tipo; m.visible = false; arma.add(m); mostrarArmaPolicial(); }).catch(() => { });
