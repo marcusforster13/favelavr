@@ -9,7 +9,8 @@
     deposito:   { alvo: [55.4, 18.0, -7.4], nome: 'Depósito (térreo da Casa 67, Escadaria 5)', raio: 6 },
     residencia: { alvo: [37.0, 19.0, -6.4], nome: 'Residência (acesso pela escadaria)', raio: 6 },
     bar:        { alvo: [10.0, 9.5, 16.0], nome: 'Bar da praça', raio: 8 },
-    oficina:    { alvo: [-31.8, -.8, 36.6], nome: 'Oficina (Caminho inferior, Casa 28)', raio: 7 }
+    oficina:    { alvo: [-31.8, -.8, 36.6], nome: 'Oficina (Caminho inferior, Casa 28)', raio: 7 },
+    sniper:     { alvo: [-35, 17.2, 7], nome: 'Laje de observação (cobertura da praça)', raio: 4 }
   };
   // rotas de fuga (correndo, seguindo o chao)
   const FUGA = {
@@ -175,14 +176,14 @@
     if (renderer.xr.isPresenting) return;                           // no Quest a luneta e olhar pela lente
     if (on && !S.armaNaMao) sacar(true);
     mirando = on && S.armaNaMao;
-    const luneta_ = mirando && S.armaTipo !== 'pistola';
-    camera.fov = mirando ? (S.armaTipo === 'sniper' ? 3.2 : luneta_ ? 9 : 45) : fovNormal; camera.updateProjectionMatrix();
+    const luneta_ = mirando && S.armaTipo === 'sniper';                // luneta so no fuzil de precisao
+    camera.fov = mirando ? (luneta_ ? 3.2 : S.armaTipo === 'fuzil' ? 38 : 45) : fovNormal; camera.updateProjectionMatrix();
     mira.style.display = luneta_ ? 'block' : 'none'; pontoPistola.style.display = mirando && !luneta_ ? 'block' : 'none';
     arma.visible = S.armaNaMao && !luneta_;
   }
   function renderizarMira() {
-    const ver = S.armaNaMao && S.armaTipo !== 'pistola' && renderer.xr.isPresenting;
-    luneta.visible = S.armaTipo !== 'pistola';
+    const ver = S.armaNaMao && S.armaTipo === 'sniper' && renderer.xr.isPresenting;
+    luneta.visible = S.armaTipo === 'sniper';
     if (!ver) return;
     const xr = renderer.xr.enabled, ant = renderer.getRenderTarget();
     luneta.userData.lente.visible = false;
@@ -248,7 +249,7 @@
   // posicao de cada arma: clarao na boca, luneta (lente e camera de aumento) e lugar na tela do computador
   const POS_ARMA = {
     pistola: { boca: -.2, tela: [.17, -.13, -.38] },
-    fuzil: { boca: -.71, tela: [.16, -.2, -.28], luneta: [0, .115, .02], fov: 5, raio: 1, tubo: true },
+    fuzil: { boca: -.71, tela: [.16, -.2, -.28] },                   // sem luneta (pedido do autor): mira leve
     sniper: { boca: -.84, tela: [.15, -.21, -.24], luneta: [0, .091, -.105], fov: 2, raio: .95, tubo: false }      // lente na ocular da luneta do modelo (z = 0,03)
   };
   S.armaTipo = 'pistola';
@@ -282,6 +283,7 @@
   /* ================= variacoes ================= */
   function derivar(v) {
     v.lado = v.missao === 'oficina' ? 'oeste' : 'leste';
+    if (v.missao === 'sniper') v.evento = 'nenhum';
     v.ferido = 'nao';
     if (v.missao === 'residencia' && v.morador !== 'tranca') v.suspeito = 'rende';
     if (v.missao === 'oficina') v.suspeito = v.dono_oficina === 'foge' ? 'foge' : 'rende';
@@ -303,9 +305,9 @@
     frequentador_b: ['frequentador_b', 'Frequentadora', 'f', 1.68], morador: ['morador', 'Morador', 'm', 1.8],
     mulher: ['mulher', 'Mulher do morador', 'f', 1.66], filho: ['crianca', 'Criança', 'c', 1.3],
     dono_oficina: ['dono_oficina', 'Dono da oficina', 'm', 1.78],
-    olheiro: ['olheiro', 'Rapaz na laje', 'm', 1.75], moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
+    olheiro: ['olheiro', 'Rapaz na laje', 'm', 1.75], comparsa: ['vigia', 'Homem armado', 'm', 1.8], moradora: ['senhora', 'Moradora', 'f', 1.62], crianca_rua: ['crianca', 'Criança', 'c', 1.3]
   };
-  const SUSPEITO = { deposito: 'vigia', bar: 'vendedor', oficina: 'dono_oficina', residencia: 'morador' };
+  const SUSPEITO = { deposito: 'vigia', bar: 'vendedor', oficina: 'dono_oficina', residencia: 'morador', sniper: 'vendedor' };
   function limparNPCs() { Object.values(npcs).forEach(n => scene.remove(n)); for (const k in npcs) delete npcs[k]; }
   function novoNPC(chave, x, y, z, giro) {
     const [papel, nome, voz, alt] = PAPEL[chave];
@@ -316,6 +318,7 @@
     return n;
   }
   function papeisDaMissao(v) {
+    if (v.missao === 'sniper') return ['parceiro', 'apoio', 'vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b', ...(v.sniper_cena === 'dois' ? ['comparsa'] : [])];
     const L = ['parceiro', 'apoio', v.evento === 'crianca' ? 'crianca_rua' : v.evento];
     if (v.missao === 'deposito') L.push('vigia');
     if (v.missao === 'bar') L.push('vendedor', 'dono_bar', 'frequentador_a', 'frequentador_b');
@@ -326,6 +329,7 @@
   function criarNPCs(v) {
     limparNPCs();
     for (const g of ARMAS_NPC) g.visible = false;
+    if (v.missao === 'sniper') return criarSniper(v);
     novoNPC('parceiro', PARTIDA[0] + 1.2, -2.5, PARTIDA[1] + .8, OLHAR_PARTIDA);
     const ap = novoNPC('apoio', PARTIDA[0], -2.5, PARTIDA[1], 0); ap.visible = false;
     // evento do caminho
@@ -429,7 +433,14 @@
     armaCasa.visible = v.missao === 'residencia'; escolherArma(v.arma_casa); armaCasa.position.copy(PT(POS_ARMA_CASA[0], POS_ARMA_CASA[1], POS_ARMA_CASA[2])); armaCasa.position.y += .03; armaCasa.rotation.set(0, .6, Math.PI / 2);      // deitada de lado sobre o colchao
     ctx.pousar(PARTIDA[0], PARTIDA[1]); ctx.setYaw(OLHAR_PARTIDA);
     const L = LOC[v.missao]; marcador.position.copy(PT(L.alvo[0], L.alvo[1], L.alvo[2])); marcador.visible = S.modo === 'treino';
-    const abrir = () => radio(CEN.radio.inicio.replace('{denuncia}', CEN.denuncias[v.missao])).then(() => dica(`Destino: ${L.nome}. Fale com o parceiro e informe a chegada pelo rádio (menu: T ou botão Y/B).`, 8));
+    let abrir = () => radio(CEN.radio.inicio.replace('{denuncia}', CEN.denuncias[v.missao])).then(() => dica(`Destino: ${L.nome}. Fale com o parceiro e informe a chegada pelo rádio (menu: T ou botão Y/B).`, 8));
+    if (v.missao === 'sniper') {
+      ctx.pousar(L.alvo[0], L.alvo[2]); ctx.setYaw(Math.atan2(-(11 - L.alvo[0]), -(15.5 - L.alvo[2])));
+      marcador.visible = false; A.chegou = true; A.chegada = true; A.plano = true; A.eventoFeito = true;
+      trocarArma('sniper');
+      abrir = () => radio(CEN.radio.sniper_inicio).then(() => dica('Olhe pela luneta (no Quest, leve o fuzil ao olho; no computador, botão direito). Depois informe pelo rádio o que vê (menu).', 9));
+      A.tEntrada = setTimeout(() => { if (A && !A.relatou) entradaEquipe(); }, 75000);      // a equipe entra mesmo sem o relato
+    }
     if (cap) { fecharPaineis(); menu.mostrar({ tag: 'Modo história', titulo: cap.titulo, texto: cap.texto, longe: 1.3, botoes: [{ label: 'Começar', acao: () => { menu.esconder(); abrir(); } }] }); }
     else abrir();
     status();
@@ -599,16 +610,101 @@
     }, texto);
   }
 
+  /* ================= missao de sniper: cobertura da praca do bar a partir da laje ================= */
+  // tiros de longe: as paredes da praca tambem contam na colisao do tiro (o resto do cenario so perto do policial)
+  const caixaPraca = new THREE.Box3(new THREE.Vector3(-2, 5, 8), new THREE.Vector3(22, 20, 26));
+  let malhasPraca = null;
+  const colisaoBase = ctx.colisao;
+  ctx.colisao = () => {
+    if (!(A && S.variacao.missao === 'sniper')) return colisaoBase();
+    if (!malhasPraca) malhasPraca = ctx.malhas().filter(o => o.userData.caixa?.intersectsBox(caixaPraca));
+    return [...colisaoBase(), ...malhasPraca];
+  };
+  function criarSniper(v) {
+    // equipe esperando no pe da escada da praca
+    for (const [k, x, z] of [['parceiro', 4.2, 21.6], ['apoio', 3.4, 22.4]]) { const n = novoNPC(k, x, 9, z, olharPara(1, -1)); n.userData.equipe = true; }
+    const vd = novoNPC('vendedor', 11.2, 9.5, 15.0, olharPara(0, 1)); vd.userData.arma = armaNPC2;
+    novoNPC('dono_bar', 15.9, 9.5, 15.1, olharPara(-1, .3));
+    novoNPC('frequentador_a', 8.5, 9.5, 16.3, olharPara(1, -.4)); novoNPC('frequentador_b', 7.4, 9.5, 15.2, olharPara(1, 0));
+    if (v.sniper_cena === 'dois') { const cm = novoNPC('comparsa', 15.0, 9.5, 16.6, olharPara(-1, .5)); cm.userData.arma = armaNPC; }
+    mostrarTipo(armaNPC, 'pistola'); mostrarTipo(armaNPC2, 'pistola');
+    malhasPraca = null;
+    // refem: antes da entrada, o armado agarra a frequentadora e aponta para ela
+    if (v.sniper_cena === 'refem') setTimeout(() => {
+      if (!A) return; const r = npcs.frequentador_b, n = npcs.vendedor; if (!r || !n) return;
+      rota(n, [[7.9, 15.85]], 1.6, 'andando', () => {      // atras e um pouco ao lado da refem: cabeca e ombro expostos para quem esta na laje
+        n.userData.arma.visible = true; n.userData.ameaca = true; n.userData.atira = false; n.userData.base = 'apontando'; animar(n, 'apontando', 1e6, .2);
+        n.rotation.y = olharPara(r.position.x - n.position.x, r.position.z - n.position.z); n.userData.semVirar = true; n.userData.giroBase = n.rotation.y;
+        n.userData.alvoMira = r.position.clone().setY(r.position.y + 1.55);      // aponta para a cabeca da refem
+        r.userData.base = 'nervoso'; animar(r, 'nervoso', 1e6, .2); diz(r, F('frequentador_b_refem')); sincAmeaca(); status();
+      });
+    }, 9000);
+  }
+  function relatarSniper() {
+    const v = S.variacao, certo = { ninguem: 'ninguem', rende: 'um', refem: 'refem', dois: 'dois' }[v.sniper_cena];
+    painelOpc('Rádio · atirador', 'O que você vê pela luneta?', CEN.dialogos.relatorio_sniper, op => {
+      A.relatou = true;
+      if (op.id === certo || (v.sniper_cena === 'refem' && !A.refemVisto && op.id === 'um')) registrar('relatorio_visual'); else registrar('relatorio_errado', op.id);
+      radio('Ciente, atirador. Equipe aguardando sua liberação.').then(() => dica('Quando quiser, libere a entrada da equipe pelo rádio (menu).', 6));
+    }, 'Olhe com calma: mãos, cintura, quem está perto de quem.');
+  }
+  function entradaEquipe() {
+    if (!A || A.equipeEntrou) return; A.equipeEntrou = true; clearTimeout(A.tEntrada);
+    radio(CEN.radio.sniper_entrada);
+    const dest = { parceiro: [[5.6, 18.6], [8.6, 17.4]], apoio: [[5.0, 19.2], [9.8, 16.9]] };
+    let chegaram = 0;
+    for (const k of ['parceiro', 'apoio']) { const n = npcs[k]; if (!n) continue; n.userData.base = 'parada'; rota(n, dest[k], 1.9, 'andando', () => { n.userData.base = 'apontando'; animar(n, n.userData.acoes?.apontando ? 'apontando' : 'parada', 1e6, .2); if (++chegaram === 2) reacaoPraca(); }); }
+    status();
+  }
+  function reacaoPraca() {
+    const v = S.variacao, n = npcs.vendedor; if (!A || !n) return;
+    if (v.sniper_cena === 'ninguem') { animar(n, 'nervoso', 1e6, .2); n.userData.base = 'nervoso'; diz(n, F('vendedor_celular')); setTimeout(() => renderNPC(n), 2500); return; }
+    if (v.sniper_cena === 'rende') { diz(n, F('vendedor_rende')).then(() => renderNPC(n)); return; }
+    // refem e dois: os armados apontam para a equipe; sem reacao do atirador em ~6 s, um policial e atingido
+    const armados = [n, ...(npcs.comparsa ? [npcs.comparsa] : [])];
+    for (const a of armados) {
+      if (a.userData.caido || a.userData.rendido) continue;
+      a.userData.arma.visible = true; a.userData.ameaca = true; a.userData.atira = false; a.userData.semVirar = true;
+      a.rotation.y = olharPara(npcs.parceiro.position.x - a.position.x, npcs.parceiro.position.z - a.position.z); a.userData.giroBase = a.rotation.y;
+      a.userData.alvoMira = npcs.parceiro.position.clone().setY(npcs.parceiro.position.y + 1.4);      // aponta para a equipe
+      a.userData.base = 'apontando'; animar(a, 'apontando', 1e6, .2);
+    }
+    diz(npcs.comparsa || n, F('comparsa_atira') || F('vendedor_atira'), null); sincAmeaca(); status();
+    A.tEquipe = setTimeout(() => {
+      if (!A || !ameacando().length) return;
+      const p = npcs.parceiro, atirador = ameacando()[0]; somTiro(); if (atirador.userData.arma?.userData.flash) acenderFlash(atirador.userData.arma.userData.flash);
+      registrar('equipe_atingida'); radio(CEN.radio.sniper_atingido);
+      p.userData.caido = true; cair(p); A.ferido = p; S.variacao.ferido = 'sim';
+      setTimeout(() => { for (const a of ameacando()) renderNPC(a, true); }, 1800);      // o apoio contem os armados
+      status();
+    }, 6500);
+  }
+  function sniperQuadro() {
+    if (A.tEquipe && A.equipeEntrou && !ameacando().length && !A.contido) {          // ameaca neutralizada: equipe avanca e prende
+      A.contido = true; clearTimeout(A.tEquipe);
+      setTimeout(() => radio('Ameaça contida. Equipe no controle da praça.'), 800);
+    }
+    if (S.variacao.sniper_cena === 'refem' && npcs.vendedor?.userData.ameaca) A.refemVisto = true;
+  }
+  function avaliarSniper() {
+    const v = S.variacao, ruins = S.graves.some(g => /disparo_injustificado|tiro_com_civis/.test(g.id));
+    const disparou = S.log.some(l => /resposta_proporcional|disparo_/.test(l.id));
+    if ((v.sniper_cena === 'refem' || v.sniper_cena === 'dois') && !ruins && Object.values(npcs).filter(n => n.userData.arma && n.userData.chave !== 'parceiro').every(n => n.userData.caido || n.userData.rendido) && !S.erros.some(e => e.id === 'equipe_atingida')) registrar('tiro_preciso');
+    if ((v.sniper_cena === 'ninguem' || v.sniper_cena === 'rende') && !disparou) registrar('conter_sem_disparo');
+  }
+
   /* ================= encerramento ================= */
   function certoEnquadramento() {
     const v = S.variacao;
     if (v.missao === 'deposito') return A.entrou && v.deposito_indicios === 'visiveis' ? 'trafico' : 'mandado';
     if (v.missao === 'residencia') return v.morador === 'tranca' ? 'crise' : v.morador === 'recusa' && !A.entrou ? 'mandado' : v.arma_casa === 'fuzil' ? 'posse_16' : 'posse_12';
     if (v.missao === 'bar') return 'trafico';
+    if (v.missao === 'sniper') return v.sniper_cena === 'ninguem' ? 'nenhum' : v.sniper_cena === 'rende' ? 'sem_disparo' : 'disparo_legitimo';
     return v.moto === 'regular' ? 'liberar' : 'adulteracao';
   }
   function decidirFinal() {
     const v = S.variacao, certo = certoEnquadramento();
+    if (v.missao === 'sniper') avaliarSniper();
     painelOpc('Rádio · encerramento', 'Enquadramento da ocorrência', CEN.dialogos.enquadramento[v.missao], op => {
       A.decidiu = true;
       if (op.id === certo) registrar('enquadramento_correto');
@@ -661,6 +757,7 @@
         { label: 'Modo história (4 ocorrências guiadas)', acao: () => comecar('historia') },
         { label: 'Modo treino (objetivos, dicas e destino marcado)', acao: () => comecar('treino') },
         { label: 'Modo avaliação (sem dicas)', acao: () => comecar('avaliacao') },
+        { label: 'Missão de sniper (cobertura da praça, com dicas)', acao: () => comecar('sniper') },
         { label: S.voz === false ? 'Voz sintética: desligada (só legendas)' : 'Voz sintética: ligada', acao: () => { S.voz = S.voz === false; aviso(); } },
         { label: 'Cancelar', acao: () => menu.esconder() }
       ]
@@ -686,7 +783,7 @@
   async function comecar(modo) {
     fecharPaineis();
     Object.assign(S, { historia: modo === 'historia', modo: modo === 'avaliacao' ? 'avaliacao' : 'treino' });
-    const v0 = S.historia ? derivar({ ...sortear(), ...CEN.historia[0].variacao }) : sortear();
+    const v0 = S.historia ? derivar({ ...sortear(), ...CEN.historia[0].variacao }) : modo === 'sniper' ? derivar({ ...sortear(), missao: 'sniper' }) : sortear();
     window.__som?.carregarFalas?.(['fala_radio', 'fala_parceiro', 'fala_apoio']);      // vozes so agora (na abertura travava o Quest); radio e equipe primeiro
     menu.mostrar({ tag: 'Treinamento', titulo: 'Carregando personagens…', texto: 'Aguarde alguns segundos.', botoes: [] });
     await Promise.race([Promise.all([carregarPapeis(papeisDaMissao(v0).map(k => PAPEL[k][0])), itensProntos]), new Promise(r => setTimeout(r, 40000))]);
@@ -703,7 +800,9 @@
     fecharPaineis();
     const b = [], v = S.variacao, susp = A && npcs[S.variacao.suspeitoChave];
     if (A && !A.chegada) b.push({ label: 'Rádio: informar a chegada à comunidade', acao: () => falarRadio('chegada') });
-    if (A && !A.apoio) b.push({ label: 'Rádio: pedir apoio', acao: () => falarRadio('apoio') });
+    if (A && v.missao === 'sniper' && !A.relatou) b.unshift({ label: 'Rádio: informar o que vejo pela luneta', acao: relatarSniper });
+    if (A && v.missao === 'sniper' && A.relatou && !A.equipeEntrou) b.unshift({ label: 'Rádio: liberar a entrada da equipe', acao: () => { menu.esconder(); entradaEquipe(); } });
+    if (A && !A.apoio && v.missao !== 'sniper') b.push({ label: 'Rádio: pedir apoio', acao: () => falarRadio('apoio') });
     if (A?.fugiu && !A.comunicouFuga) b.push({ label: 'Rádio: comunicar a fuga (direção e características)', acao: () => falarRadio('fuga') });
     if (A?.ferido && !A.socorro) b.push({ label: 'Rádio: pedir socorro médico e comunicar o disparo', acao: () => { fecharPaineis(); A.socorro = true; registrar('socorro'); radio(CEN.radio.socorro); } });
     if (A?.chegou && !A.decidiu) b.push({ label: 'Rádio: enquadramento e condução (encerrar a ocorrência)', acao: decidirFinal });
@@ -794,7 +893,7 @@
     if (S.armaNaMao && (!c || c.userData.mao !== 'left')) {
       // com a arma na mao, clicar em quem foge (ou ameaca) da a ordem verbal primeiro; o segundo clique dispara
       const susp = A && npcs[S.variacao.suspeitoChave];
-      if (susp?.visible && (susp.userData.fugindo || susp.userData.ameaca) && !susp.userData.ordem && !susp.userData.ordemDada) {
+      if (S.variacao.missao !== 'sniper' && susp?.visible && (susp.userData.fugindo || susp.userData.ameaca) && !susp.userData.ordem && !susp.userData.ordemDada) {
         const h = ray.intersectObject(susp.userData.hit, false)[0];
         if (h && h.distance < 25) { susp.userData.ordemDada = true; ordemVerbal(susp); return true; }
       }
@@ -844,6 +943,14 @@
     if (A.ferido && !A.socorro) L.push('Peça socorro médico pelo rádio (menu)');
     if (!A.chegada) L.push('Informe a chegada pelo rádio (menu)');
     if (!A.plano) L.push('Combine o deslocamento com o parceiro');
+    if (v.missao === 'sniper') {
+      if (!A.relatou) L.push('Observe a praça pela luneta e informe pelo rádio o que vê (menu)');
+      else if (!A.equipeEntrou) L.push('Libere a entrada da equipe pelo rádio (menu)');
+      else if (ameacando().length) L.push('Ameaça contra a equipe: dispare só no armado, sem civil na linha');
+      if (A.ferido && !A.socorro) L.push('Peça socorro pelo rádio (menu)');
+      if (A.equipeEntrou && !ameacando().length && !A.decidiu) L.push('Encerre pelo rádio: enquadramento (menu)');
+      return L.slice(0, 6);
+    }
     if (!A.chegou) { L.push(`Suba até: ${LOC[v.missao].nome} (coluna âmbar)`); if (!A.eventoFeito) L.push('Atenção às pessoas no caminho'); return L.slice(0, 6); }
     if (v.missao === 'deposito') { if (!A.anunciou) L.push('Observe da porta e anuncie a polícia'); else if (!A.decidiuEntrada) L.push('Decida se pode entrar'); else if (A.entrou) L.push('Apreenda e lacre o material (clique em cada item)'); }
     if (v.missao === 'residencia') { if (!A.anunciou) L.push('Fale com o morador'); else if (A.entrou && armaCasa.visible) L.push('Apreenda a arma no quarto do casal'); if (v.familia === 'mulher_crianca' && !A.familiaFora && A.anunciou) L.push('Tire a mulher e a criança da área de risco'); }
@@ -886,7 +993,8 @@
     if (S.ativo && A && A.fase !== 'fim') {
       const v = S.variacao, L = LOC[v.missao];
       if (!A.chegou && Math.hypot(V.x - L.alvo[0], V.z - L.alvo[2]) < L.raio && Math.abs(V.y - 1.6 - L.alvo[1]) < 4) aoChegar();
-      for (const k of ['parceiro', 'apoio']) if (npcs[k]) seguir(npcs[k], dt);
+      for (const k of ['parceiro', 'apoio']) if (npcs[k] && !npcs[k].userData.equipe) seguir(npcs[k], dt);
+      if (v.missao === 'sniper') sniperQuadro();
       // crianca no caminho: passar perto dela com a arma na mao, sem antes protege-la, e falha grave
       const cr = npcs.crianca_rua;
       if (cr?.visible && !A.eventoFeito && !A.criancaRisco && S.armaNaMao && V.distanceTo(cr.position) < 4) { A.criancaRisco = true; registrar('crianca_na_linha'); }
@@ -905,7 +1013,7 @@
       moverNPC(n, dt);
       camera.getWorldPosition(V);
       if (u.caido || !n.visible) continue;
-      const encarar = u.ameaca || (u.real && !u.destino && !u.semVirar && !u.rota?.length && V.distanceTo(n.position) < 3.2);
+      const encarar = (u.ameaca && !u.semVirar) || (u.real && !u.destino && !u.semVirar && !u.rota?.length && V.distanceTo(n.position) < 3.2);
       if (encarar) { let d = Math.atan2(V.x - n.position.x, V.z - n.position.z) - n.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); n.rotation.y += d * Math.min(1, dt * (A?.ameaca ? 6 : 2.5)); }
       else if (u.fig && !u.fala && !u.destino && !u.rota?.length) { let d = u.giroBase - n.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); n.rotation.y += d * Math.min(1, dt * 1.2); }
     }
@@ -938,7 +1046,7 @@
     apontar, painelAberto: () => paineis.some(p => p.mesh.visible),
     menu: abrirMenu, quadro, estado: S, relatorio, trocarArma, mirar,
     _t: { comecar, encerrar, objetivos, sortear, derivar, novaOcorrencia, npcs, itens, usarItem, sacar, disparar, falarRadio, menuParceiro, menuEvento, menuDeposito, menuMorador, menuBar, menuOficina,
-      decidirFinal, finalizar, reagir, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
+      decidirFinal, finalizar, reagir, relatarSniper, entradaEquipe, reacaoPraca, trocarArma, mirar, luneta, rtMira, camMira, arma, ordemVerbal, renderNPC, usar, LOC, marcador, armaCasa, aoChegar, carregarPapeis, papeisDaMissao,
       ocorrencia: () => A, historico: HIST, botoes: () => (dialogo.mesh.visible ? dialogo : menu).botoes, painel: () => (dialogo.mesh.visible ? dialogo : menu.mesh.visible ? menu : null) }
   };
   return window.__trein;

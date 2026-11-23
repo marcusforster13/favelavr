@@ -19,42 +19,49 @@ const VOZ = {
   olheiro: 'lvkgCBi6spByiTZMPJEK', crianca: 'lvkgCBi6spByiTZMPJEK', moradora: '7eUAxNOneHxqfyRS77mW',
   vigia: 'hwnuNyWkl9DjdTFykrN6', vendedor: 'hwnuNyWkl9DjdTFykrN6', dono_oficina: 'Qrdut83w0Cr152Yb4Xn3',
   dono_bar: 'bJrNspxJVFovUxNBQ0wh', frequentador_a: 'qPfM2laM0pRL4rrZtBGl', frequentador_b: 'cyD08lEy76q03ER1jZ7y',
-  morador: 'Qrdut83w0Cr152Yb4Xn3', mulher: 'cyD08lEy76q03ER1jZ7y'
+  morador: 'Qrdut83w0Cr152Yb4Xn3', mulher: 'cyD08lEy76q03ER1jZ7y', comparsa: 'Qrdut83w0Cr152Yb4Xn3'
 };
 const ESTILO = {
   radio: { stability: .7, similarity_boost: .8, style: .05 }, parceiro: { stability: .6, similarity_boost: .8, style: .1 }, apoio: { stability: .6, similarity_boost: .8, style: .1 },
   olheiro: { stability: .3, similarity_boost: .8, style: .55 }, crianca: { stability: .4, similarity_boost: .8, style: .4 }, moradora: { stability: .5, similarity_boost: .8, style: .25 },
   vigia: { stability: .3, similarity_boost: .8, style: .55 }, vendedor: { stability: .3, similarity_boost: .8, style: .55 }, dono_oficina: { stability: .45, similarity_boost: .8, style: .3 },
   dono_bar: { stability: .55, similarity_boost: .75, style: .15 }, frequentador_a: { stability: .5, similarity_boost: .8, style: .2 }, frequentador_b: { stability: .5, similarity_boost: .8, style: .2 },
-  morador: { stability: .4, similarity_boost: .8, style: .4 }, mulher: { stability: .35, similarity_boost: .8, style: .45 }
+  morador: { stability: .4, similarity_boost: .8, style: .4 }, comparsa: { stability: .3, similarity_boost: .8, style: .55 }, mulher: { stability: .35, similarity_boost: .8, style: .45 }
 };
 const NOME = { radio: 'Sala de operações (rádio)', parceiro: 'Policial parceiro', apoio: 'Policial de apoio', olheiro: 'Rapaz na laje', crianca: 'Criança', moradora: 'Moradora',
   vigia: 'Homem no depósito', vendedor: 'Homem no balcão', dono_oficina: 'Dono da oficina', dono_bar: 'Dono do bar', frequentador_a: 'Frequentador', frequentador_b: 'Frequentadora',
-  morador: 'Morador', mulher: 'Mulher do morador' };
+  morador: 'Morador', mulher: 'Mulher do morador', comparsa: 'Homem armado' };
 
 function falasDoCenario() {
   const c = JSON.parse(fs.readFileSync(CENARIOS[0], 'utf8')), F = c.falas, lista = [];
   const add = (quem, t, quando) => { if (typeof t === 'string' && t && !t.startsWith('(')) lista.push({ quem, texto: t, quando }); };      // "(sai correndo)" e so legenda
   // radio: a abertura leva a denuncia de cada missao
   for (const [k, t] of Object.entries(c.radio)) {
-    if (k === 'inicio') for (const [m, d] of Object.entries(c.denuncias)) add('radio', t.replace('{denuncia}', d), 'Rádio: denúncia ' + m);
+    if (k === 'inicio') for (const [m, d] of Object.entries(c.denuncias)) { if (m !== 'sniper') add('radio', t.replace('{denuncia}', d), 'Rádio: denúncia ' + m); }      // a de sniper tem abertura propria
     else add('radio', t, 'Rádio: ' + k);
   }
   add('radio', 'Ciente. Atenção redobrada: a chegada de vocês foi avisada.', 'Rádio: olheiro');      // frases fixas do motor
   add('radio', 'Ciente. Viaturas do entorno avisadas. Não persigam sozinhos.', 'Rádio: fuga');
   // personagens: a chave da fala comeca pelo papel (vigia_rende, morador_recusa, frequentador_usuario...)
-  const papel = k => k === 'parceiro_resposta' ? 'parceiro' : k.startsWith('frequentador') ? 'frequentador_a' : k.startsWith('dono_oficina') ? 'dono_oficina' : k.startsWith('dono_bar') ? 'dono_bar' : k.split('_')[0];
+  const papel = k => k === 'parceiro_resposta' ? 'parceiro' : k.startsWith('frequentador_b') ? 'frequentador_b' : k.startsWith('frequentador') ? 'frequentador_a' : k.startsWith('dono_oficina') ? 'dono_oficina' : k.startsWith('dono_bar') ? 'dono_bar' : k.split('_')[0];
   for (const [k, t] of Object.entries(F)) { const q = papel(k); if (VOZ[q]) add(q, t, k); }
   add('vigia', 'Tá bom, tá bom, perdi!', 'Rende após a ordem de parar');
+  add('radio', 'Ciente, atirador. Equipe aguardando sua liberação.', 'Rádio: sniper relato');
+  add('radio', 'Ameaça contida. Equipe no controle da praça.', 'Rádio: sniper contido');
   add('morador', 'O armário é no quarto do casal.', 'Residência');
   return lista;
 }
+// nome estavel: a fala que ja tem gravacao (catalogo do cenario) mantem o arquivo; as novas ganham o proximo numero livre
 function montarFalas() {
-  const cont = {}, visto = new Set(), saida = [];
+  const cat = new Map((JSON.parse(fs.readFileSync(CENARIOS[0], 'utf8')).vozes?.falas || []).map(f => [f.texto, f.arquivo]));
+  const maior = {};
+  for (const a of cat.values()) { const m = a.match(/^fala_(.+)_([0-9]+)$/); if (m) maior[m[1]] = Math.max(maior[m[1]] || 0, +m[2]); }
+  const visto = new Set(), saida = [];
   for (const f of falasDoCenario()) {
     if (visto.has(f.texto)) continue; visto.add(f.texto);
-    cont[f.quem] = (cont[f.quem] || 0) + 1;
-    saida.push({ ...f, arquivo: `fala_${f.quem}_${String(cont[f.quem]).padStart(2, '0')}`, personagem: NOME[f.quem] });
+    let arquivo = cat.get(f.texto);
+    if (!arquivo) { maior[f.quem] = (maior[f.quem] || 0) + 1; arquivo = `fala_${f.quem}_${String(maior[f.quem]).padStart(2, '0')}`; }
+    saida.push({ ...f, arquivo, personagem: NOME[f.quem] });
   }
   return saida;
 }

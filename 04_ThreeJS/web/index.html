@@ -57,7 +57,7 @@
     <dt>N · V</dt><dd>colisão liga/desliga · voar (sem gravidade)</dd>
     <dt>Clique</dt><dd>falar · usar · escolher nos painéis</dd>
     <dt>T · K · Q · R</dt><dd>menu · checklist · sacar/guardar a arma (clique dispara) · recarregar</dd>
-    <dt>1 · 2 · 3 · botão direito</dt><dd>pistola · fuzil · fuzil de precisão · mirar pela luneta (Z também)</dd>
+    <dt>1 · 2 · 3 · botão direito</dt><dd>pistola · fuzil · fuzil de precisão · mirar (luneta só no de precisão; Z também)</dd>
     <dt>VR</dt><dd>analógico esquerdo anda, direito gira · gatilho usa ou teleporta · A saca a arma (gatilho direito dispara, apertar o analógico direito recarrega) · X troca a arma: pistola, fuzil, fuzil de precisão (com luneta: leve ao olho) · Y ou B abre o menu</dd>
   </dl>
   <label>Brilho <input id="exp" type="range" min="0.5" max="1.6" step="0.02" value="1"></label>
@@ -88,7 +88,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const $ = id => document.getElementById(id);
-const VERSAO = '1123-1130';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
+const VERSAO = '1123-1142';      // carimbada por carimbar_versao.py a cada envio; entra no endereco dos arquivos para o navegador nao usar copia antiga
 window.__versao = VERSAO; window.__arq = {};
 const H = window.__h = p => p + '?h=' + (window.__arq[p] || VERSAO);
 $('versao').textContent = 'versão ' + VERSAO;

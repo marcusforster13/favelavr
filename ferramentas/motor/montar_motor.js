@@ -40,6 +40,8 @@ B = rep(B, `if (agora - ultimoTiro < 280 || S.recarregando) return true;`, `if (
 // recuo depende da arma (recuo() em missoes.js): pistola pula para cima; fuzil coice no ombro, sobe e abre na rajada
 B = rep(B, `somTiro(); acenderFlash(clarao); capsula(arma); status(); const rx = arma.rotation.x; arma.rotation.x = rx + .22;
     setTimeout(() => { arma.rotation.x = rx; }, 130);`, `somTiro(); acenderFlash(clarao); capsula(arma); status(); recuo(ray);`);
+// a arma do NPC mira o alvo dele (refem, equipe) quando houver; senao, o policial
+B = rep(B, `mao.getWorldPosition(g.position); camera.getWorldPosition(GT);`, `mao.getWorldPosition(g.position); if (n.userData.alvoMira) GT.copy(n.userData.alvoMira); else camera.getWorldPosition(GT);`);
 // quem segura fuzil e posicionado por poseFuzil (missoes.js), nao pela mao
 B = rep(B, `const g = n.userData.arma; if (!g?.visible) continue;`, `const g = n.userData.arma; if (!g?.visible || g.userData.fuzil) continue;`);
 B = rep(B, `if (u.ameaca) { if (u.chave === 'atirador') registrar('resposta_sala', 'granada'); renderNPC(n, true); }`, `if (u.ameaca) renderNPC(n, true);`);
@@ -47,10 +49,10 @@ B = rep(B, `        if (n.userData.ameaca) { registrar(k === 'atirador' ? 'respo
         else registrar('disparo_injustificado', n.userData.nome);`,
 `        if (n.userData.ameaca) {
           registrar('resposta_proporcional', 'disparo');
-          // civis perto da linha de tiro (ate pouco depois do alvo): falha grave
+          // civis perto da linha de tiro (ate pouco depois do alvo): falha grave. Fuzil de precisao: margem estreita e so antes do alvo
           const civis = Object.values(npcs).filter(c => c !== n && c.visible && !c.userData.caido && !/^(parceiro|apoio)$/.test(c.userData.chave));
           const o = ray.ray.origin, dd = ray.ray.direction;
-          if (civis.some(c => { const p = c.position.clone().setY(c.position.y + 1.1).sub(o); const t = p.dot(dd); return t > 0 && t < hn.distance + 3 && p.addScaledVector(dd, -t).length() < .8; })) registrar('tiro_com_civis');
+          if (civis.some(c => { const p = c.position.clone().setY(c.position.y + 1.1).sub(o); const t = p.dot(dd); const sn = S.armaTipo === 'sniper'; return t > 0 && t < hn.distance + (sn ? 0 : 3) && p.addScaledVector(dd, -t).length() < (sn ? .28 : .8); })) registrar('tiro_com_civis');
           if (ameacando().length <= 1) legenda('Instrutor', 'Agressão armada atual: o disparo foi resposta legítima. Agora, socorro imediato e comunicação.', 6);
         }
         else if (n.userData.fugindo) registrar('tiro_fuga', n.userData.nome);

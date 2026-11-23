@@ -12,7 +12,8 @@
       "deposito",
       "residencia",
       "bar",
-      "oficina"
+      "oficina",
+      "sniper"
     ],
     "evento": [
       "olheiro",
@@ -54,6 +55,12 @@
       "apresenta",
       "cliente",
       "foge"
+    ],
+    "sniper_cena": [
+      "ninguem",
+      "rende",
+      "refem",
+      "dois"
     ]
   },
   "nomes_variacao": {
@@ -61,7 +68,8 @@
       "deposito": "depósito de drogas (Casa 67)",
       "residencia": "arma em residência",
       "bar": "ponto de venda no bar da praça",
-      "oficina": "moto roubada na oficina"
+      "oficina": "moto roubada na oficina",
+      "sniper": "cobertura de sniper na praça do bar"
     },
     "evento": {
       "olheiro": "olheiro com rádio na laje",
@@ -103,6 +111,12 @@
       "apresenta": "dono apresenta documento",
       "cliente": "diz que é de um cliente",
       "foge": "tenta fugir com a maleta"
+    },
+    "sniper_cena": {
+      "ninguem": "ninguém armado (era um celular)",
+      "rende": "um armado que se rende",
+      "refem": "um armado com refém",
+      "dois": "dois armados"
     }
   },
   "fases": [
@@ -127,6 +141,13 @@
           "texto": "Agiu certo no evento do caminho (sem abordar quem não ameaça; protegeu a criança)",
           "pontos": 6,
           "base": "CPP art. 244 · ECA art. 18 · ADPF 635"
+        },
+        {
+          "id": "relatorio_visual",
+          "texto": "Informou pelo rádio, com precisão, o que via pela luneta",
+          "pontos": 8,
+          "base": "Observação e comunicação (atirador de cobertura)",
+          "condicao": "variacao.missao == 'sniper'"
         }
       ],
       "erros": [
@@ -145,6 +166,12 @@
           "id": "arma_sem_ameaca",
           "texto": "Apontou a arma para quem não ameaçava",
           "pontos": -4
+        },
+        {
+          "id": "relatorio_errado",
+          "texto": "Informou à equipe uma situação diferente da real",
+          "pontos": -5,
+          "feedback": "O que o atirador relata orienta a entrada da equipe: confira pela luneta antes de falar."
         }
       ],
       "falhas_graves": [
@@ -280,6 +307,21 @@
           "pontos": 6,
           "base": "ADPF 635 · CP art. 135",
           "condicao": "variacao.ferido == 'sim'"
+        },
+        {
+          "id": "tiro_preciso",
+          "texto": "Neutralizou a ameaça atual com disparo preciso, sem atingir terceiros",
+          "pontos": 14,
+          "base": "CP arts. 23 e 25 (legítima defesa de terceiro)",
+          "condicao": "variacao.missao == 'sniper' && (variacao.sniper_cena == 'refem' || variacao.sniper_cena == 'dois')",
+          "validar": true
+        },
+        {
+          "id": "conter_sem_disparo",
+          "texto": "Não disparou: não havia ameaça atual",
+          "pontos": 14,
+          "base": "CP art. 23 · Lei 13.060/2014",
+          "condicao": "variacao.missao == 'sniper' && (variacao.sniper_cena == 'ninguem' || variacao.sniper_cena == 'rende')"
         }
       ],
       "erros": [
@@ -293,6 +335,11 @@
           "texto": "Algemou sem resistência, fuga ou perigo",
           "pontos": -4,
           "feedback": "Súmula Vinculante 11: algemas só com resistência, fundado receio de fuga ou perigo, justificadas por escrito."
+        },
+        {
+          "id": "equipe_atingida",
+          "texto": "A ameaça não foi contida a tempo e um policial da equipe foi atingido",
+          "pontos": -10
         }
       ],
       "falhas_graves": [
@@ -406,13 +453,17 @@
     "socorro": "Ciente. Ambulância acionada. Preservem o local e prestem os primeiros socorros.",
     "mandado": "Ciente. A delegacia vai representar pelo mandado de busca. Mantenham a observação, sem entrar.",
     "crise": "Ciente. Equipe especializada e negociador a caminho. Mantenham o isolamento, sem entrar.",
-    "final": "Ciente, guarnição. Conduzam à delegacia. Encerrando."
+    "final": "Ciente, guarnição. Conduzam à delegacia. Encerrando.",
+    "sniper_inicio": "Atirador, aqui é a central. Você está na laje, de cobertura para a equipe que vai entrar no bar da praça. Observe pela luneta e informe o que vê antes da entrada.",
+    "sniper_entrada": "Equipe entrando na praça agora.",
+    "sniper_atingido": "Policial atingido! Policial atingido na praça!"
   },
   "denuncias": {
     "deposito": "estão guardando droga no térreo da casa de esquina da escadaria grande, lá no alto.",
     "residencia": "o morador da casa da escadaria, lá no alto, guarda uma arma em casa.",
     "bar": "estão vendendo droga no balcão do bar da praça.",
-    "oficina": "estão desmontando moto roubada na oficina do caminho de baixo."
+    "oficina": "estão desmontando moto roubada na oficina do caminho de baixo.",
+    "sniper": "homem armado no balcão do bar da praça; a equipe vai entrar e você dá cobertura da laje."
   },
   "dialogos": {
     "parceiro": [
@@ -659,8 +710,40 @@
           "id": "adulteracao",
           "fala": "Adulteração de sinal identificador (CP art. 311) e receptação (art. 180)"
         }
+      ],
+      "sniper": [
+        {
+          "id": "disparo_legitimo",
+          "fala": "Disparo em legítima defesa de terceiros (CP art. 25): socorro, preservação do local e comunicação imediata"
+        },
+        {
+          "id": "sem_disparo",
+          "fala": "Sem disparo: a equipe conteve o armado; prisão em flagrante (porte ilegal, Lei 10.826/2003)"
+        },
+        {
+          "id": "nenhum",
+          "fala": "Ninguém armado: abordagem e liberação, sem prisão"
+        }
       ]
-    }
+    },
+    "relatorio_sniper": [
+      {
+        "id": "ninguem",
+        "fala": "\"Central, atirador: não vejo arma. Um homem no balcão com algo na mão, frequentadores nas mesas.\""
+      },
+      {
+        "id": "um",
+        "fala": "\"Central, atirador: um armado no balcão, pistola na cintura. Frequentadores nas mesas.\""
+      },
+      {
+        "id": "refem",
+        "fala": "\"Central, atirador: um armado com uma refém junto ao balcão. Não entrem ainda.\""
+      },
+      {
+        "id": "dois",
+        "fala": "\"Central, atirador: dois armados, um no balcão e outro no fundo, perto do monitor.\""
+      }
+    ]
   },
   "falas": {
     "parceiro_resposta": "Fechado. Eu vou na frente, você cobre o alto.",
@@ -685,7 +768,10 @@
     "frequentador_usuario": "Tenho só um pouquinho aqui, pra mim.",
     "dono_oficina_apresenta": "Tá aqui o documento, tudo certinho. Pode olhar o chassi.",
     "dono_oficina_cliente": "Essa aí é de um cliente, eu não sei de nada não.",
-    "dono_oficina_foge": "(pega a maleta e corre)"
+    "dono_oficina_foge": "(pega a maleta e corre)",
+    "vendedor_celular": "Calma, calma! É só o celular, chefe!",
+    "frequentador_b_refem": "Me solta! Me solta, pelo amor de Deus!",
+    "comparsa_atira": "Sai daí, polícia!"
   },
   "historia": [
     {
@@ -809,6 +895,24 @@
         "personagem": "Sala de operações (rádio)",
         "quando": "Rádio: final",
         "texto": "Ciente, guarnição. Conduzam à delegacia. Encerrando."
+      },
+      {
+        "arquivo": "fala_radio_13",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper_inicio",
+        "texto": "Atirador, aqui é a central. Você está na laje, de cobertura para a equipe que vai entrar no bar da praça. Observe pela luneta e informe o que vê antes da entrada."
+      },
+      {
+        "arquivo": "fala_radio_14",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper_entrada",
+        "texto": "Equipe entrando na praça agora."
+      },
+      {
+        "arquivo": "fala_radio_15",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper_atingido",
+        "texto": "Policial atingido! Policial atingido na praça!"
       },
       {
         "arquivo": "fala_radio_11",
@@ -943,10 +1047,40 @@
         "texto": "Essa aí é de um cliente, eu não sei de nada não."
       },
       {
+        "arquivo": "fala_vendedor_03",
+        "personagem": "Homem no balcão",
+        "quando": "vendedor_celular",
+        "texto": "Calma, calma! É só o celular, chefe!"
+      },
+      {
+        "arquivo": "fala_frequentador_b_01",
+        "personagem": "Frequentadora",
+        "quando": "frequentador_b_refem",
+        "texto": "Me solta! Me solta, pelo amor de Deus!"
+      },
+      {
+        "arquivo": "fala_comparsa_01",
+        "personagem": "Homem armado",
+        "quando": "comparsa_atira",
+        "texto": "Sai daí, polícia!"
+      },
+      {
         "arquivo": "fala_vigia_03",
         "personagem": "Homem no depósito",
         "quando": "Rende após a ordem de parar",
         "texto": "Tá bom, tá bom, perdi!"
+      },
+      {
+        "arquivo": "fala_radio_16",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper relato",
+        "texto": "Ciente, atirador. Equipe aguardando sua liberação."
+      },
+      {
+        "arquivo": "fala_radio_17",
+        "personagem": "Sala de operações (rádio)",
+        "quando": "Rádio: sniper contido",
+        "texto": "Ameaça contida. Equipe no controle da praça."
       },
       {
         "arquivo": "fala_morador_05",
