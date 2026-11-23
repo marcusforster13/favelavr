@@ -74,3 +74,6 @@ const base = `
 const missoes = fs.readFileSync(path.join(__dirname, 'missoes.js'), 'utf8');
 fs.writeFileSync(SAIDA, cab + A + '\n' + base + '\n' + B + '\n' + missoes);
 console.log('motor montado:', (cab + A + base + B + missoes).split('\n').length, 'linhas');
+// confere a sintaxe como modulo (pega nome declarado duas vezes, que o --check comum deixa passar)
+require('child_process').execSync('node --input-type=module --check', { input: fs.readFileSync(SAIDA), stdio: ['pipe', 'inherit', 'inherit'] });
+console.log('sintaxe ok');

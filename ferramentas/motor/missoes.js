@@ -56,11 +56,25 @@
       itens[k] = { o: g.scene, h, ...ITEM[k] }; hitsItem.push(h);
     }).catch(e => console.warn('peca nao carregou', k, e))));
   }).catch(() => { });
-  // arma da residencia (enquanto o autor nao manda o revolver/fuzil: a pistola atual), sobre a cama do casal
+  // arma da residencia, sobre a cama do casal. Revolver e fuzil do autor (modelos/revolver.glb e fuzil.glb, ja na
+  // convencao da pistola: cano para -Z, eixo do cano em y = 0, origem na empunhadura; ver ferramentas/normalizar_arma.mjs)
   const armaCasa = new THREE.Group(); armaCasa.visible = false; scene.add(armaCasa);
   gl.loadAsync(HQ('modelos/arma.glb')).then(g => armaCasa.add(prep(g.scene.clone()))).catch(() => { });
   const hitArmaCasa = new THREE.Mesh(new THREE.BoxGeometry(.5, .3, .5), invisivelM()); hitArmaCasa.userData.item = 'arma_casa'; armaCasa.add(hitArmaCasa);
   const POS_ARMA_CASA = [48.5, 19.9, -4.9];      // sobre o colchao da cama do casal (topo a 19,6 m)
+  const BOCA_ARMA = { pistola: -.2, revolver: -.24, fuzil: -.71 };                 // onde sai o clarao (um pouco a frente da boca)
+  for (const tipo of ['revolver', 'fuzil']) gl.loadAsync(HQ('modelos/' + tipo + '.glb')).then(g => {
+    for (const grp of [armaCasa, armaNPC3, armaSolta3]) { const m = prep(g.scene.clone()); m.userData.tipo = tipo; m.visible = false; grp.add(m); }
+    if (A && S.variacao.missao === 'residencia') escolherArma(S.variacao.arma_casa);
+  }).catch(() => { });
+  // mostra so o modelo da arma sorteada (pistola = o modelo sem marca de tipo); nao mexe no clarao nem na area de clique
+  function escolherArma(var_) {
+    const tipo = var_ === 'revolver' || var_ === 'fuzil' ? var_ : 'pistola';
+    for (const grp of [armaCasa, armaNPC3, armaSolta3])
+      for (const c of grp.children) if (!c.userData.luz && !(c.isMesh && c.material?.visible === false)) c.visible = (c.userData.tipo || 'pistola') === tipo;
+    if (armaNPC3.userData.flash) armaNPC3.userData.flash.position.z = BOCA_ARMA[tipo];
+    hitArmaCasa.scale.set(1, 1, tipo === 'fuzil' ? 2.2 : 1);
+  }
 
   // marcador do destino (modo treino): coluna de luz ambar que se ve de longe
   const marcador = new THREE.Group(); marcador.visible = false; scene.add(marcador);
@@ -133,7 +147,8 @@
     }
     if (v.missao === 'oficina') novoNPC('dono_oficina', -32.6, -.8, 33.2, olharPara(0, 1));
     if (v.missao === 'residencia') {
-      const n = novoNPC('morador', 37.25, 18.9, -7.45, olharPara(-.3, 1));      // saiu ao patamar para atender, de frente para a escada n.userData.arma = armaNPC3;
+      // saiu ao patamar para atender, de frente para a escada
+      const n = novoNPC('morador', 37.25, 18.9, -7.45, olharPara(-.3, 1)); n.userData.arma = armaNPC3;
       if (v.familia === 'mulher_crianca') { novoNPC('mulher', 41.5, 18.9, -5.8, olharPara(-1, -.3)); novoNPC('filho', 42.2, 18.9, -5.3, olharPara(-1, -.3)); }
     }
   }
@@ -217,7 +232,7 @@
     criarNPCs(v); sacar(false);
     for (const it of Object.values(itens)) { it.o.visible = true; it.h.visible = true; }
     if (v.missao === 'deposito' && v.deposito_indicios === 'escondidos') for (const k of ['dep_pacotes', 'dep_balanca', 'dep_caderno']) if (itens[k]) { itens[k].o.visible = false; itens[k].h.visible = false; }
-    armaCasa.visible = v.missao === 'residencia'; armaCasa.position.copy(PT(POS_ARMA_CASA[0], POS_ARMA_CASA[1], POS_ARMA_CASA[2])); armaCasa.position.y += .03; armaCasa.rotation.set(0, .6, Math.PI / 2);      // deitada de lado sobre o colchao
+    armaCasa.visible = v.missao === 'residencia'; escolherArma(v.arma_casa); armaCasa.position.copy(PT(POS_ARMA_CASA[0], POS_ARMA_CASA[1], POS_ARMA_CASA[2])); armaCasa.position.y += .03; armaCasa.rotation.set(0, .6, Math.PI / 2);      // deitada de lado sobre o colchao
     ctx.pousar(PARTIDA[0], PARTIDA[1]); ctx.setYaw(OLHAR_PARTIDA);
     const L = LOC[v.missao]; marcador.position.copy(PT(L.alvo[0], L.alvo[1], L.alvo[2])); marcador.visible = S.modo === 'treino';
     const abrir = () => radio(CEN.radio.inicio.replace('{denuncia}', CEN.denuncias[v.missao])).then(() => dica(`Destino: ${L.nome}. Fale com o parceiro e informe a chegada pelo rádio (menu: T ou botão Y/B).`, 8));
