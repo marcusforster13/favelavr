@@ -971,12 +971,17 @@ export async function iniciar(ctx) {
       for (const o of ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2']) { const b = m.getObjectByName(o); if (b) girarNoMundo(b, FM.q, 1 / 3, .5); }
     }
     canoPistola(m);
-    PM.x.crossVectors(PM.y, PM.z.clone().negate()).normalize(); PM.y.crossVectors(PM.z.clone().negate(), PM.x);
-    PM.M.makeBasis(PM.x, PM.y, PM.z.clone().negate()); g.quaternion.setFromRotationMatrix(PM.M);      // -Z da arma = cano
-    g.position.copy(PM.h).lerp(PM.mi, .55); g.translateY(.05); g.translateZ(-.045); g.updateMatrixWorld(true);      // empunhadura dentro do punho
+    // centro do punho fechado: entre o pulso e a base dos dedos, um pouco para o lado do minimo (onde os dedos fecham)
+    const punho = PM.h.clone().lerp(PM.mi, .5).addScaledVector(PM.y, -.015);
+    // pistola reta (topo para cima, sem tombar) e cano direto no alvo
+    PM.z.copy(FM.c).sub(punho).normalize().negate();                 // +Z da arma = para tras
+    PM.x.crossVectors(FM.cima, PM.z).normalize(); PM.y.crossVectors(PM.z, PM.x);
+    PM.M.makeBasis(PM.x, PM.y, PM.z); g.quaternion.setFromRotationMatrix(PM.M);
+    // meio da empunhadura (medido no modelo: x 0, y -0,075, z +0,045) no centro do punho
+    g.position.copy(punho).sub(new THREE.Vector3(0, -.075, .045).applyQuaternion(g.quaternion)); g.updateMatrixWorld(true);
     // mao esquerda de apoio: o pulso ao lado e abaixo da empunhadura (as duas maos juntas na arma)
-    const alvoL = new THREE.Vector3(-.04, -.12, .06).applyMatrix4(g.matrixWorld), xG = new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion);
-    ikBraco(m, 'L', alvoL, xG.negate().add(new THREE.Vector3(0, -1.2, 0)));              // empunhadura na palma, cano acima da mao
+    const alvoL = new THREE.Vector3(-.045, -.13, .07).applyMatrix4(g.matrixWorld), xG = new THREE.Vector3(1, 0, 0).applyQuaternion(g.quaternion);
+    ikBraco(m, "L", alvoL, xG.negate().add(new THREE.Vector3(0, -1.2, 0)));
     return true;
   }
   function fuzilNasMaos(n, m, g) {
