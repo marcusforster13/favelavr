@@ -533,6 +533,15 @@ if (!SEM.has('trein')) import('./' + H('treinamento.js')).then(m => m.iniciar({
   colisao: () => alvosCol, malhas: () => malhas,
   setYaw: y => { yaw = y; pitch = 0; }, chutarMira: (p, y) => { pitch = Math.min(1.4, pitch + p); yaw += y; }, setLanterna: () => { }, lanternaLigada: () => false
 })).catch(e => console.error('Treinamento não carregou:', e));
+/* ---------- monitoramento pelo instrutor (portal XPTO VR) ----------
+   So carrega com ?monitor=1 (aluno transmite) ou ?espectador=1 (tela do instrutor). Sem isso, nada muda. */
+{
+  const q = new URLSearchParams(location.search);
+  if (q.has('monitor') || q.has('espectador'))
+    import('./' + H('monitor.js')).then(m => m.iniciar({ scene, camera, rig, renderer, modo: q.has('espectador') ? 'espectador' : 'aluno',
+      fase: 'favela', cenarios: ["treinamento/cenario_favela_01.json"], modos: [["carga", "Missão: recuperar a carga (com dicas)"], ["sniper", "Missão de sniper (com dicas)"], ["historia", "História (as duas missões)"], ["avaliacao", "Avaliação (sorteia uma, sem dicas)"]] }))
+      .catch(e => console.warn('Monitoramento não carregou:', e));
+}
 </script>
 </body>
 </html>
